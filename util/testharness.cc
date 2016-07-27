@@ -13,14 +13,17 @@ namespace leveldb {
 namespace test {
 
 namespace {
+// 存储了基础类名称，测试子类名，和子类的静态函数的_RunIt函数指针
 struct Test {
   const char* base;
   const char* name;
   void (*func)();
 };
+// 全局变量用来存储所有的test对象
 std::vector<Test>* tests;
 }
 
+// 将传出的三个参数装到Test类对象里面，并且放到全局的vector中注册test
 bool RegisterTest(const char* base, const char* name, void (*func)()) {
   if (tests == NULL) {
     tests = new std::vector<Test>;
@@ -33,6 +36,9 @@ bool RegisterTest(const char* base, const char* name, void (*func)()) {
   return true;
 }
 
+// 先从环境中拿那些测试集合要测试的名称
+// 如果没拿到则测试所有注册了的
+// 如果拿到了则只测试匹配的
 int RunAllTests() {
   const char* matcher = getenv("LEVELDB_TESTS");
 
@@ -57,6 +63,7 @@ int RunAllTests() {
   return 0;
 }
 
+// 从环境中拿测试用的临时目录
 std::string TmpDir() {
   std::string dir;
   Status s = Env::Default()->GetTestDirectory(&dir);
@@ -64,6 +71,7 @@ std::string TmpDir() {
   return dir;
 }
 
+// 从环境中拿种子，如果拿不到或者拿到的是负数则使用默认值301
 int RandomSeed() {
   const char* env = getenv("TEST_RANDOM_SEED");
   int result = (env != NULL ? atoi(env) : 301);
