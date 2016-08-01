@@ -236,6 +236,7 @@ class AtomicPointer {
 // Atomic pointer based on ia64 acq/rel
 /**
  * 在ia64下，利用acq和rel的指令直接实现相应的语义。
+ * Cache一致性，我们基本上是看不到的，只要考虑CPU指令乱序就可以了。
  */
 #elif defined(__ia64) && defined(__GNUC__)
 class AtomicPointer {
