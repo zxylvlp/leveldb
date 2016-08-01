@@ -38,6 +38,10 @@ namespace leveldb {
 class Arena;
 
 template<typename Key, class Comparator>
+/**
+ * 这个跳表，在一个时间点，只能有一个写者(有一个mutex)保证
+ * 但是对于读者则没有限制，不需要加锁，使用atomic_pointer的release_store和acquire_load去同步
+ */
 class SkipList {
  private:
   struct Node;
@@ -56,6 +60,9 @@ class SkipList {
   bool Contains(const Key& key) const;
 
   // Iteration over the contents of a skip list
+  /**
+   * 跳表的迭代器的声明
+   */
   class Iterator {
    public:
     // Initialize an iterator over the specified list.
@@ -89,34 +96,65 @@ class SkipList {
     void SeekToLast();
 
    private:
+    /**
+     * 用于存放当前迭代器指向的跳表的指针
+     */
     const SkipList* list_;
+    /**
+     * 用于存放当前迭代器指向的节点的指针
+     */
     Node* node_;
     // Intentionally copyable
   };
 
  private:
+  /**
+   * 用于存放跳表中一个节点的最大高度
+   */
   enum { kMaxHeight = 12 };
 
   // Immutable after construction
+  /**
+   * 用于存放跳表中各个节点key的比较函数
+   */
   Comparator const compare_;
+  /**
+   * 用于存放跳表中节点内存分配器
+   */
   Arena* const arena_;    // Arena used for allocations of nodes
 
+  /**
+   * 用于存放跳表的头结点，这个头结点是一个dummy节点
+   */
   Node* const head_;
 
   // Modified only by Insert().  Read racily by readers, but stale
   // values are ok.
+  /**
+   * 当前所有节点的中的最高节点的节点高度，被写者修改，但是读者读到脏值也是允许的，这是为什么呢？
+   * 因为跳表最底下一层是链表，拿到大一点的高度可以加速查询，低一点顶多是不够快，没什么大不了的
+   */
   port::AtomicPointer max_height_;   // Height of the entire list
 
+  /**
+   * 为什么用NoBarrier_Load的原因见上面的解释
+   */
   inline int GetMaxHeight() const {
     return static_cast<int>(
         reinterpret_cast<intptr_t>(max_height_.NoBarrier_Load()));
   }
 
   // Read/written only by Insert().
+  /**
+   * 插入元素的时候的生成随机高度的随机数生成器
+   */
   Random rnd_;
 
   Node* NewNode(const Key& key, int height);
   int RandomHeight();
+  /**
+   * 判断a, b两个key是否相等
+   */
   bool Equal(const Key& a, const Key& b) const { return (compare_(a, b) == 0); }
 
   // Return true if key is greater than the data stored in "n"
@@ -137,26 +175,45 @@ class SkipList {
   // Return head_ if list is empty.
   Node* FindLast() const;
 
+  /**
+   * 禁止拷贝
+   */
   // No copying allowed
   SkipList(const SkipList&);
   void operator=(const SkipList&);
 };
 
 // Implementation details follow
+/**
+ * 跳表中节点的定义
+ */
 template<typename Key, class Comparator>
 struct SkipList<Key,Comparator>::Node {
+  /**
+   * 跳表节点的构造方法，传入一个key
+   */
   explicit Node(const Key& k) : key(k) { }
 
+  /**
+   * 跳表节点的key值
+   */
   Key const key;
 
   // Accessors/mutators for links.  Wrapped in methods so we can
   // add the appropriate barriers as necessary.
+  /**
+   * 获得当前节点中，下一个节点指针数组中的第n指针，使用acquire语义来保证之下的代码不被乱序到读取之前，
+   * 使读到的数据符合时间顺序
+   */
   Node* Next(int n) {
     assert(n >= 0);
     // Use an 'acquire load' so that we observe a fully initialized
     // version of the returned Node.
     return reinterpret_cast<Node*>(next_[n].Acquire_Load());
   }
+  /**
+   * 设置当前节点中，下一个节点指针数组中的第n个指针为x，使用release语义来保证之上的代码不被乱序到设置之后
+   */
   void SetNext(int n, Node* x) {
     assert(n >= 0);
     // Use a 'release store' so that anybody who reads through this
@@ -165,10 +222,16 @@ struct SkipList<Key,Comparator>::Node {
   }
 
   // No-barrier variants that can be safely used in a few locations.
+  /**
+   * 获得当前节点中，下一个节点指针数组中的第n指针
+   */
   Node* NoBarrier_Next(int n) {
     assert(n >= 0);
     return reinterpret_cast<Node*>(next_[n].NoBarrier_Load());
   }
+  /**
+   * 设置当前节点中，下一个节点指针数组中的第n个指针为x
+   */
   void NoBarrier_SetNext(int n, Node* x) {
     assert(n >= 0);
     next_[n].NoBarrier_Store(x);
@@ -176,9 +239,15 @@ struct SkipList<Key,Comparator>::Node {
 
  private:
   // Array of length equal to the node height.  next_[0] is lowest level link.
+  /**
+   * 指向后面跳表节点的指针数组，柔性数组
+   */
   port::AtomicPointer next_[1];
 };
 
+/**
+ * 创建一个跳表节点，先分配内存，然后构造，这样搞是因为我们要自己搞一个柔性数组
+ */
 template<typename Key, class Comparator>
 typename SkipList<Key,Comparator>::Node*
 SkipList<Key,Comparator>::NewNode(const Key& key, int height) {
@@ -187,29 +256,46 @@ SkipList<Key,Comparator>::NewNode(const Key& key, int height) {
   return new (mem) Node(key);
 }
 
+/**
+ * 跳表迭代器的构造函数，仅仅将list_设置为传入的跳表
+ */
 template<typename Key, class Comparator>
 inline SkipList<Key,Comparator>::Iterator::Iterator(const SkipList* list) {
   list_ = list;
   node_ = NULL;
 }
 
+/**
+ * 验证当前迭代器指向的节点是否是有效的(不为null)
+ */
 template<typename Key, class Comparator>
 inline bool SkipList<Key,Comparator>::Iterator::Valid() const {
   return node_ != NULL;
 }
 
+/**
+ * 获得当前迭代器指向的节点的key，这个函数调用的前提是呆迭代是有效的
+ */
 template<typename Key, class Comparator>
 inline const Key& SkipList<Key,Comparator>::Iterator::key() const {
   assert(Valid());
   return node_->key;
 }
 
+/**
+ * 将当前迭代器指向的节点置为下一个节点，直接找最下层的指针即可，这个函数调用的前提是呆迭代是有效的
+ */
 template<typename Key, class Comparator>
 inline void SkipList<Key,Comparator>::Iterator::Next() {
   assert(Valid());
   node_ = node_->Next(0);
 }
 
+/**
+ * 将当前迭代器指向的节点置为前一个节点，因为跳表是没有办法向前移动的，
+ * 所以我们调用FindLessThan获得小于当前节点的节点，如果找到的节点是跳表的head_即dummy，
+ * 说明前面没有节点了，指向NULL即可
+ */
 template<typename Key, class Comparator>
 inline void SkipList<Key,Comparator>::Iterator::Prev() {
   // Instead of using explicit "prev" links, we just search for the
@@ -221,16 +307,29 @@ inline void SkipList<Key,Comparator>::Iterator::Prev() {
   }
 }
 
+/**
+ * 将当前迭代器指向的节点置为，key大于等于target的节点。
+ * 调用FindGreaterOrEqual找到并将其设置为当前指向的节点。
+ * 迭代器定义第一个元素前面的元素为null，最后一个元素后面的元素为head_。
+ */
 template<typename Key, class Comparator>
 inline void SkipList<Key,Comparator>::Iterator::Seek(const Key& target) {
   node_ = list_->FindGreaterOrEqual(target, NULL);
 }
 
+/**
+ * 将迭代器指向第一个元素，即从dummy节点找到下一个节点就行了。
+ */
 template<typename Key, class Comparator>
 inline void SkipList<Key,Comparator>::Iterator::SeekToFirst() {
   node_ = list_->head_->Next(0);
 }
 
+/**
+ * 将迭代器指向最后一个元素，
+ * 调用FindLast获得最后一个元素的指针，
+ * 如果最后一个元素是dummy说明跳表为空，则指向NULL
+ */
 template<typename Key, class Comparator>
 inline void SkipList<Key,Comparator>::Iterator::SeekToLast() {
   node_ = list_->FindLast();
@@ -252,6 +351,9 @@ int SkipList<Key,Comparator>::RandomHeight() {
   return height;
 }
 
+/**
+ * NULL被认为无限大
+ */
 template<typename Key, class Comparator>
 bool SkipList<Key,Comparator>::KeyIsAfterNode(const Key& key, Node* n) const {
   // NULL n is considered infinite
