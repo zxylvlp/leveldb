@@ -48,12 +48,18 @@ namespace port {
 
 // Define MemoryBarrier() if available
 // Windows on x86
+/**
+ * 在Win下面有OS提供的MB实现
+ */
 #if defined(OS_WIN) && defined(COMPILER_MSVC) && defined(ARCH_CPU_X86_FAMILY)
 // windows.h already provides a MemoryBarrier(void) macro
 // http://msdn.microsoft.com/en-us/library/ms684208(v=vs.85).aspx
 #define LEVELDB_HAVE_MEMORY_BARRIER
 
 // Mac OS
+/**
+ * 在Mac下面有OS提供的MB实现
+ */
 #elif defined(OS_MACOSX)
 inline void MemoryBarrier() {
   OSMemoryBarrier();
@@ -62,6 +68,11 @@ inline void MemoryBarrier() {
 
 // Gcc on x86
 #elif defined(ARCH_CPU_X86_FAMILY) && defined(__GNUC__)
+/**
+ * 在x86下的gcc中使用下面的空指令来防止编译器乱序
+ * 是空指令的原因是x86的CPU只会出现SL乱序，但是release和acquire语义都不会用到SL乱序，不用防止CPU乱序
+ * MB的目的就是让编译器优化的过程中和CPU执行的过程中，下面的代码，或者上面的代码不要穿越到另外一边。
+ */
 inline void MemoryBarrier() {
   // See http://gcc.gnu.org/ml/gcc/2003-04/msg01180.html for a discussion on
   // this idiom. Also see http://en.wikipedia.org/wiki/Memory_ordering.
@@ -71,6 +82,9 @@ inline void MemoryBarrier() {
 
 // Sun Studio
 #elif defined(ARCH_CPU_X86_FAMILY) && defined(__SUNPRO_CC)
+/**
+ * 在x86下的sun studio中使用下面的空指令来防止编译器乱序
+ */
 inline void MemoryBarrier() {
   // See http://gcc.gnu.org/ml/gcc/2003-04/msg01180.html for a discussion on
   // this idiom. Also see http://en.wikipedia.org/wiki/Memory_ordering.
@@ -91,6 +105,9 @@ typedef void (*LinuxKernelMemoryBarrierFunc)(void);
 // shows that the extra function call cost is completely negligible on
 // multi-core devices.
 //
+/**
+ * 在arm下linux中使用下面的函数来防止编译器和CPU乱序
+ */
 inline void MemoryBarrier() {
   (*(LinuxKernelMemoryBarrierFunc)0xffff0fa0)();
 }
@@ -98,6 +115,9 @@ inline void MemoryBarrier() {
 
 // ARM64
 #elif defined(ARCH_CPU_ARM64_FAMILY)
+/**
+ * 在arm64下使用下面的指令来防止编译器和CPU乱序
+ */
 inline void MemoryBarrier() {
   asm volatile("dmb sy" : : : "memory");
 }
@@ -105,6 +125,9 @@ inline void MemoryBarrier() {
 
 // PPC
 #elif defined(ARCH_CPU_PPC_FAMILY) && defined(__GNUC__)
+/**
+ * 在ppc下使用下面的指令来防止编译器和CPU乱序
+ */
 inline void MemoryBarrier() {
   // TODO for some powerpc expert: is there a cheaper suitable variant?
   // Perhaps by having separate barriers for acquire and release ops.
@@ -114,6 +137,9 @@ inline void MemoryBarrier() {
 
 // MIPS
 #elif defined(ARCH_CPU_MIPS_FAMILY) && defined(__GNUC__)
+/**
+ * 在mips下使用下面的指令来防止编译器和CPU乱序
+ */
 inline void MemoryBarrier() {
   __asm__ __volatile__("sync" : : : "memory");
 }
@@ -123,6 +149,12 @@ inline void MemoryBarrier() {
 
 // AtomicPointer built using platform-specific MemoryBarrier()
 #if defined(LEVELDB_HAVE_MEMORY_BARRIER)
+/**
+ * 原子指针类型，因为是指针类型，可以保证原子读写，不会出现数据败坏
+ * 还提供了Acquire和Release语义，acquire语义保证了读的下面的指令不会穿越上来，
+ * release语义保证写的上面的指令不会穿越下去。
+ * 单写者release_store，多读者acquire_load是常用的同步方式。
+ */
 class AtomicPointer {
  private:
   void* rep_;
@@ -144,6 +176,9 @@ class AtomicPointer {
 
 // AtomicPointer based on <cstdatomic>
 #elif defined(LEVELDB_ATOMIC_PRESENT)
+/**
+ * 利用c++标准库提供的atomic对象的load和store
+ */
 class AtomicPointer {
  private:
   std::atomic<void*> rep_;
@@ -166,6 +201,10 @@ class AtomicPointer {
 
 // Atomic pointer based on sparc memory barriers
 #elif defined(__sparcv9) && defined(__GNUC__)
+/**
+ * 在sparcv9下面在防止编译器乱序的前提下，利用不同的mb防止不同类型的CPU乱序
+ * 因为acquire需要ll和ls的mb, require需要ss和ls的mb
+ */
 class AtomicPointer {
  private:
   void* rep_;
@@ -195,6 +234,9 @@ class AtomicPointer {
 };
 
 // Atomic pointer based on ia64 acq/rel
+/**
+ * 在ia64下，利用acq和rel的指令直接实现相应的语义。
+ */
 #elif defined(__ia64) && defined(__GNUC__)
 class AtomicPointer {
  private:
