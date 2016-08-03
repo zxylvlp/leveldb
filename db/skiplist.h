@@ -246,7 +246,9 @@ struct SkipList<Key,Comparator>::Node {
 };
 
 /**
- * 创建一个跳表节点，先分配内存，然后构造，这样搞是因为我们要自己搞一个柔性数组
+ * 创建一个跳表节点
+ *
+ * 先分配内存，然后构造，这样搞是因为我们要自己搞一个柔性数组
  */
 template<typename Key, class Comparator>
 typename SkipList<Key,Comparator>::Node*
@@ -274,7 +276,9 @@ inline bool SkipList<Key,Comparator>::Iterator::Valid() const {
 }
 
 /**
- * 获得当前迭代器指向的节点的key，这个函数调用的前提是呆迭代是有效的
+ * 获得当前迭代器指向的节点的key
+ *
+ * 这个函数调用的前提是迭代器是有效的
  */
 template<typename Key, class Comparator>
 inline const Key& SkipList<Key,Comparator>::Iterator::key() const {
@@ -283,7 +287,9 @@ inline const Key& SkipList<Key,Comparator>::Iterator::key() const {
 }
 
 /**
- * 将当前迭代器指向的节点置为下一个节点，直接找最下层的指针即可，这个函数调用的前提是呆迭代是有效的
+ * 将当前迭代器指向的节点置为下一个节点
+ *
+ * 直接找最下层的指针即可，这个函数调用的前提是迭代器是有效的
  */
 template<typename Key, class Comparator>
 inline void SkipList<Key,Comparator>::Iterator::Next() {
@@ -292,7 +298,9 @@ inline void SkipList<Key,Comparator>::Iterator::Next() {
 }
 
 /**
- * 将当前迭代器指向的节点置为前一个节点，因为跳表是没有办法向前移动的，
+ * 将当前迭代器指向的节点置为前一个节点
+ *
+ * 因为跳表是没有办法向前移动的，
  * 所以我们调用FindLessThan获得小于当前节点的节点，如果找到的节点是跳表的head_即dummy，
  * 说明前面没有节点了，指向NULL即可
  */
@@ -308,9 +316,9 @@ inline void SkipList<Key,Comparator>::Iterator::Prev() {
 }
 
 /**
- * 将当前迭代器指向的节点置为，key大于等于target的节点。
- * 调用FindGreaterOrEqual找到并将其设置为当前指向的节点。
- * 迭代器定义第一个元素前面的元素为null，最后一个元素后面的元素为head_。
+ * 将当前迭代器指向的节点置为，key大于等于target的节点
+ *
+ * 调用FindGreaterOrEqual找到并将其设置为当前指向的节点
  */
 template<typename Key, class Comparator>
 inline void SkipList<Key,Comparator>::Iterator::Seek(const Key& target) {
@@ -318,7 +326,9 @@ inline void SkipList<Key,Comparator>::Iterator::Seek(const Key& target) {
 }
 
 /**
- * 将迭代器指向第一个元素，即从dummy节点找到下一个节点就行了。
+ * 将迭代器指向第一个元素
+ *
+ * 即从dummy节点找到下一个节点就行了，如果跳表为空，则指向NULL
  */
 template<typename Key, class Comparator>
 inline void SkipList<Key,Comparator>::Iterator::SeekToFirst() {
@@ -326,7 +336,8 @@ inline void SkipList<Key,Comparator>::Iterator::SeekToFirst() {
 }
 
 /**
- * 将迭代器指向最后一个元素，
+ * 将迭代器指向最后一个元素
+ *
  * 调用FindLast获得最后一个元素的指针，
  * 如果最后一个元素是dummy说明跳表为空，则指向NULL
  */
@@ -338,6 +349,13 @@ inline void SkipList<Key,Comparator>::Iterator::SeekToLast() {
   }
 }
 
+/**
+ * 返回一个随机高度
+ *
+ * 3/4的可能性高度为1，1/4*3/4的可能性高度为2，1/4*1/4*3/4的可能性高度为3....(1/4)^10*3/4的可能性高度为11，(1/4)^11的可能性高度为12
+ * 就是说1层的元素数是2层的元素数的4倍，是3层的元素数的16倍
+ * 返回值的值域是[1, 12]
+ */
 template<typename Key, class Comparator>
 int SkipList<Key,Comparator>::RandomHeight() {
   // Increase height with probability 1 in kBranching
@@ -352,7 +370,10 @@ int SkipList<Key,Comparator>::RandomHeight() {
 }
 
 /**
- * NULL被认为无限大
+ * 判断Key是否在Node的Key的后面
+ *
+ * 如果Node是NULL则直接返回false，因为NULL被认为无限大(NULL在尾巴的后面)
+ * 否则利用compare_判断两者的大小
  */
 template<typename Key, class Comparator>
 bool SkipList<Key,Comparator>::KeyIsAfterNode(const Key& key, Node* n) const {
@@ -360,6 +381,16 @@ bool SkipList<Key,Comparator>::KeyIsAfterNode(const Key& key, Node* n) const {
   return (n != NULL) && (compare_(n->key, key) < 0);
 }
 
+/**
+ * 找到大于等于key的节点，prev是输出参数，内容是这个返回节点的前面节点的数组
+ *
+ * 从dummy节点出发，得到最高高度level，找到下一个节点next，
+ * 如果目标key比next节点大，则将当前节点设置为下一个节点
+ * 否则，先将prev[level]设置为当前节点
+ * 然后判断是否当前是最低层，如果是最低层则返回next节点
+ * 否则下降一层继续从当前节点出发找下一个节点next
+ * 边界条件：如果跳表为空或者全部小于Key，则返回NULL
+ */
 template<typename Key, class Comparator>
 typename SkipList<Key,Comparator>::Node* SkipList<Key,Comparator>::FindGreaterOrEqual(const Key& key, Node** prev)
     const {
@@ -382,6 +413,11 @@ typename SkipList<Key,Comparator>::Node* SkipList<Key,Comparator>::FindGreaterOr
   }
 }
 
+/**
+ * 找到小于key的节点
+ *
+ * 如果跳表为空或者找不到则返回dummy
+ */
 template<typename Key, class Comparator>
 typename SkipList<Key,Comparator>::Node*
 SkipList<Key,Comparator>::FindLessThan(const Key& key) const {
@@ -403,6 +439,13 @@ SkipList<Key,Comparator>::FindLessThan(const Key& key) const {
   }
 }
 
+/**
+ * 找到最后一个元素
+ *
+ * 从dummy出发，获得最高层的高度level，从最上面的一层找到尾巴(即它的next为NULL)，
+ * 找到尾巴之后从最上层的尾巴节点开始，下降一层继续找尾巴，一直下去，直到第0层,返回第0层的尾巴。
+ * 这里的边界是如果表为空则返回dummy。
+ */
 template<typename Key, class Comparator>
 typename SkipList<Key,Comparator>::Node* SkipList<Key,Comparator>::FindLast()
     const {
@@ -423,6 +466,11 @@ typename SkipList<Key,Comparator>::Node* SkipList<Key,Comparator>::FindLast()
   }
 }
 
+/**
+ * 跳表的构造函数
+ *
+ * 除了传入必要的参数外，要创建一个dummy节点并且初始化它
+ */
 template<typename Key, class Comparator>
 SkipList<Key,Comparator>::SkipList(Comparator cmp, Arena* arena)
     : compare_(cmp),
@@ -435,6 +483,20 @@ SkipList<Key,Comparator>::SkipList(Comparator cmp, Arena* arena)
   }
 }
 
+/**
+ * 插入一个key的函数
+ *
+ * 首先调用FindGreaterOrEqual找到大于key的节点和这个节点前面的所有节点
+ * 因为不允许重复插入，所以要么这个节点找不到，要么这个节点的key不等于key
+ * 调用RandomHeight获得要插入的节点的高度
+ * 调用GetMaxHeight获得跳表当前的最大高度
+ * 如果要插入的节点的高度大于跳表当前的最大高度的时候
+ * 对prev的上面几层设置为dummy(因为前面没有那么高的)
+ * 并将跳当前的最大高度设置为插入节点的高度
+ * 创建一个新节点，将新节点的next数组设置为prev的next
+ * 并将prev的每一个next设置为x
+ *
+ */
 template<typename Key, class Comparator>
 void SkipList<Key,Comparator>::Insert(const Key& key) {
   // TODO(opt): We can use a barrier-free variant of FindGreaterOrEqual()
@@ -471,6 +533,13 @@ void SkipList<Key,Comparator>::Insert(const Key& key) {
   }
 }
 
+/**
+ * 判断跳表中是否包含key
+ *
+ * 调用FindGreaterOrEqual获得大于等于它的节点，如果找不到则不包含
+ * 如果找到的节点的key与key不相等则不包含
+ * 否则是包含的
+ */
 template<typename Key, class Comparator>
 bool SkipList<Key,Comparator>::Contains(const Key& key) const {
   Node* x = FindGreaterOrEqual(key, NULL);
