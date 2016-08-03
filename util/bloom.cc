@@ -10,16 +10,31 @@
 namespace leveldb {
 
 namespace {
+/**
+ * 定义一个bf需要用到的hash函数
+ */
 static uint32_t BloomHash(const Slice& key) {
   return Hash(key.data(), key.size(), 0xbc9f1d34);
 }
 
+/**
+ * bf的实现类继承了FilterPolicy虚基类
+ */
 class BloomFilterPolicy : public FilterPolicy {
  private:
+  /**
+   * 给现在存在的每一个key分配几个bit
+   */
   size_t bits_per_key_;
+  /**
+   * 每一个key需要在bitset中放几个1
+   */
   size_t k_;
 
  public:
+  /**
+   * 构造函数
+   */
   explicit BloomFilterPolicy(int bits_per_key)
       : bits_per_key_(bits_per_key) {
     // We intentionally round down to reduce probing cost a little bit
@@ -32,6 +47,17 @@ class BloomFilterPolicy : public FilterPolicy {
     return "leveldb.BuiltinBloomFilter2";
   }
 
+  /**
+   * 创建一个bf
+   *
+   * 首先对keys的数量乘以bits_per_key_，得到一共要多少bit
+   * 然后补上后面的空，得到一共要的bit数和byte数
+   * 对dst后面加上byte数个0，然后加上k_
+   * 然后遍历每一个key，将其hash后得到h，并右转17bit得到delta，
+   * 然后进行下面的操作k_次，
+   * h对bit数取模，将bitset的这一位设为1
+   * 将h加上delta
+   */
   virtual void CreateFilter(const Slice* keys, int n, std::string* dst) const {
     // Compute bloom filter size (in both bits and bytes)
     size_t bits = n * bits_per_key_;
@@ -60,6 +86,16 @@ class BloomFilterPolicy : public FilterPolicy {
     }
   }
 
+  /**
+   * 查询key在bf中是否存在
+   *
+   * 先从bf的最后一个byte中得到k_，如果k过大则返回可能存在
+   * 然后先将key进行hash得到h，然后右移17bit作为delta
+   * 重复下面的操作k_次
+   * 然后将h对bit数取模得到一个位置，查看这个位置的bit是否为0，如果为0则返回不存在
+   * 将h加delta
+   * 结束了重复说明存在
+   */
   virtual bool KeyMayMatch(const Slice& key, const Slice& bloom_filter) const {
     const size_t len = bloom_filter.size();
     if (len < 2) return false;
@@ -88,6 +124,9 @@ class BloomFilterPolicy : public FilterPolicy {
 };
 }
 
+/**
+ * 创建一个bf
+ */
 const FilterPolicy* NewBloomFilterPolicy(int bits_per_key) {
   return new BloomFilterPolicy(bits_per_key);
 }

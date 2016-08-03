@@ -21,7 +21,9 @@
 namespace leveldb {
 
 class Slice;
-
+/**
+ * FilterPolicy虚基类
+ */
 class FilterPolicy {
  public:
   virtual ~FilterPolicy();

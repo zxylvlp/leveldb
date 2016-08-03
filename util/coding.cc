@@ -6,6 +6,12 @@
 
 namespace leveldb {
 
+/**
+ * 将u32序列化
+ *
+ * 如果是小端则直接将value放到buf中，
+ * 否则要自己转一下
+ */
 void EncodeFixed32(char* buf, uint32_t value) {
   if (port::kLittleEndian) {
     memcpy(buf, &value, sizeof(value));
@@ -17,6 +23,12 @@ void EncodeFixed32(char* buf, uint32_t value) {
   }
 }
 
+/**
+ * 将u64序列化
+ *
+ * 如果是小端则直接将value放到buf中，
+ * 否则要自己转一下
+ */
 void EncodeFixed64(char* buf, uint64_t value) {
   if (port::kLittleEndian) {
     memcpy(buf, &value, sizeof(value));
