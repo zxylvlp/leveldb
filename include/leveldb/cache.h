@@ -27,10 +27,18 @@ class Cache;
 
 // Create a new cache with a fixed size capacity.  This implementation
 // of Cache uses a least-recently-used eviction policy.
+/**
+ * 创建一个LRUCache，容量为capacity
+ */
 extern Cache* NewLRUCache(size_t capacity);
-
+/**
+ * 虚基类Cache，定义接口
+ */
 class Cache {
  public:
+  /**
+   * Cache的默认构造函数
+   */
   Cache() { }
 
   // Destroys all existing entries by calling the "deleter"

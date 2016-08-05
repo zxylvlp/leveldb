@@ -44,18 +44,33 @@ void EncodeFixed64(char* buf, uint64_t value) {
   }
 }
 
+/**
+ * 将u32编码并append到dst中
+ *
+ * 先调用EncodeFixed32将value放到一个buf中，
+ * 然后将buf，append到dst中
+ */
 void PutFixed32(std::string* dst, uint32_t value) {
   char buf[sizeof(value)];
   EncodeFixed32(buf, value);
   dst->append(buf, sizeof(buf));
 }
 
+/**
+ * 将u64编码并append到dst中
+ *
+ * 先调用EncodeFixed64将value放到一个buf中，
+ * 然后将buf，append到dst中
+ */
 void PutFixed64(std::string* dst, uint64_t value) {
   char buf[sizeof(value)];
   EncodeFixed64(buf, value);
   dst->append(buf, sizeof(buf));
 }
 
+/**
+ *
+ */
 char* EncodeVarint32(char* dst, uint32_t v) {
   // Operate on characters as unsigneds
   unsigned char* ptr = reinterpret_cast<unsigned char*>(dst);
