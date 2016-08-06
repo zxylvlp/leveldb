@@ -453,10 +453,13 @@ void LRUCache::Release(Cache::Handle* handle) {
 }
 
 /**
- * 将kv对插入Cache中
+ * 将kv对插入Cache中，并且返回对应Handle的指针
  *
  * 首先加锁，然后分配一个LRUHandle结构，将其中的内容进行设置，然后将in_cache设为false，将refs设为1，并且拷贝key到key_data
- *
+ * 然后判断缓存容量是否大于零，如果大于零将refs+1，将in_cache设置为true，然后将它插入到in_use_链表中，然后将当前内存使用量加charge
+ * 调用hash表的insert将e插入到hash表中，然后调用FinishErase对可能返回的Handle指针进行析构
+ * 如果当前的内存使用量大于实际容量并且lru_不为空时候，从头遍历lru_，并且删除，直到当前内存使用量小于实际容量或者lru_为空
+ * 最后返回分配的的Handle的指针
  */
 Cache::Handle* LRUCache::Insert(
     const Slice& key, uint32_t hash, void* value, size_t charge,
@@ -497,10 +500,10 @@ Cache::Handle* LRUCache::Insert(
 // If e != NULL, finish removing *e from the cache; it has already been removed
 // from the hash table.  Return whether e != NULL.  Requires mutex_ held.
 /**
- * 将e从lru_中删除
+ * 将e从链表中删除
  *
  * 如果e为NULL则返回false
- * 否则将e从lru_中删除，
+ * 否则将e从链表中删除，
  * 然后将in_cache设置为false，
  * 并且将usage_减e中charge的大小，
  * 最后调用Unref释放内存，返回true
@@ -546,24 +549,51 @@ void LRUCache::Prune() {
   }
 }
 
+/**
+ * cache sharding的位数
+ */
 static const int kNumShardBits = 4;
+/**
+ * cache sharding的个数
+ */
 static const int kNumShards = 1 << kNumShardBits;
 
+/**
+ * Cache的sharding版本
+ */
 class ShardedLRUCache : public Cache {
  private:
+  /**
+   * 存了多了cache的数组，用于sharding
+   */
   LRUCache shard_[kNumShards];
+  /**
+   * 用于保护分配id的互斥锁
+   */
   port::Mutex id_mutex_;
+  /**
+   * 最新分配过的id
+   */
   uint64_t last_id_;
 
+  /**
+   * 对Slice进行Hash操作
+   */
   static inline uint32_t HashSlice(const Slice& s) {
     return Hash(s.data(), s.size(), 0);
   }
 
+  /**
+   * 对hash进行sharding操作
+   */
   static uint32_t Shard(uint32_t hash) {
     return hash >> (32 - kNumShardBits);
   }
 
  public:
+  /**
+   * 构造函数
+   */
   explicit ShardedLRUCache(size_t capacity)
       : last_id_(0) {
     const size_t per_shard = (capacity + (kNumShards - 1)) / kNumShards;
@@ -571,36 +601,67 @@ class ShardedLRUCache : public Cache {
       shard_[s].SetCapacity(per_shard);
     }
   }
+  /**
+   * 析构函数
+   */
   virtual ~ShardedLRUCache() { }
+  /**
+   * 插入kv
+   * 先sharding再插入
+   */
   virtual Handle* Insert(const Slice& key, void* value, size_t charge,
                          void (*deleter)(const Slice& key, void* value)) {
     const uint32_t hash = HashSlice(key);
     return shard_[Shard(hash)].Insert(key, hash, value, charge, deleter);
   }
+  /**
+   * 查找kv
+   * 先sharding再查找
+   */
   virtual Handle* Lookup(const Slice& key) {
     const uint32_t hash = HashSlice(key);
     return shard_[Shard(hash)].Lookup(key, hash);
   }
+  /**
+   * 释放handle
+   * 先sharding在释放
+   */
   virtual void Release(Handle* handle) {
     LRUHandle* h = reinterpret_cast<LRUHandle*>(handle);
     shard_[Shard(h->hash)].Release(handle);
   }
+  /**
+   * 删除指定key对应的元素
+   * 先sharding再删除
+   */
   virtual void Erase(const Slice& key) {
     const uint32_t hash = HashSlice(key);
     shard_[Shard(hash)].Erase(key, hash);
   }
+  /**
+   * 获得handle中的value
+   */
   virtual void* Value(Handle* handle) {
     return reinterpret_cast<LRUHandle*>(handle)->value;
   }
+  /**
+   * 分配一个新的id
+   */
   virtual uint64_t NewId() {
     MutexLock l(&id_mutex_);
     return ++(last_id_);
   }
+  /**
+   * 对每一个sharding进行修剪
+   */
   virtual void Prune() {
     for (int s = 0; s < kNumShards; s++) {
       shard_[s].Prune();
     }
   }
+  /**
+   * 获得总的charge
+   */
   virtual size_t TotalCharge() const {
     size_t total = 0;
     for (int s = 0; s < kNumShards; s++) {
@@ -612,6 +673,9 @@ class ShardedLRUCache : public Cache {
 
 }  // end anonymous namespace
 
+/**
+ * 分配一个sharding版本的cache
+ */
 Cache* NewLRUCache(size_t capacity) {
   return new ShardedLRUCache(capacity);
 }

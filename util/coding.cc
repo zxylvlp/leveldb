@@ -69,7 +69,14 @@ void PutFixed64(std::string* dst, uint64_t value) {
 }
 
 /**
+ * int32的变长编码
  *
+ * 用每一个byte的最高位做是否是结束，如果是1表示不是结束，如果是0表示是结束
+ * 首先将dst拷贝给ptr
+ * 首先判断是否7位可以表示，如果可以表示则直接拷贝到ptr中，并将ptr+1
+ * 然后判断是否14为可以表示，如果可以则将v与2^7做或操作之后拷贝到ptr中，并将ptr+1，然后将v右移7位之后拷贝到ptr中，并将ptr+1
+ * 21,28和32位可以表示的判断和处理雷同，不再赘述
+ * 最后返回ptr
  */
 char* EncodeVarint32(char* dst, uint32_t v) {
   // Operate on characters as unsigneds
@@ -99,6 +106,12 @@ char* EncodeVarint32(char* dst, uint32_t v) {
   return reinterpret_cast<char*>(ptr);
 }
 
+/**
+ * 将int32变长编码，并且append到dst中
+ *
+ * 先调用EncodeVarint32将v放到一个buf中，
+ * 然后将buf按照实际编码长度，append到dst中
+ */
 void PutVarint32(std::string* dst, uint32_t v) {
   char buf[5];
   char* ptr = EncodeVarint32(buf, v);
