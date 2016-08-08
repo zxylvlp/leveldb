@@ -17,10 +17,18 @@ namespace crc32c {
 extern uint32_t Extend(uint32_t init_crc, const char* data, size_t n);
 
 // Return the crc32c of data[0,n-1]
+/**
+ * 计算data的crc
+ *
+ * 调用Extend来实现
+ */
 inline uint32_t Value(const char* data, size_t n) {
   return Extend(0, data, n);
 }
 
+/**
+ * 计算掩码时使用的delta
+ */
 static const uint32_t kMaskDelta = 0xa282ead8ul;
 
 // Return a masked representation of crc.
@@ -28,12 +36,22 @@ static const uint32_t kMaskDelta = 0xa282ead8ul;
 // Motivation: it is problematic to compute the CRC of a string that
 // contains embedded CRCs.  Therefore we recommend that CRCs stored
 // somewhere (e.g., in files) should be masked before being stored.
+/**
+ * 获得crc的掩码
+ *
+ * 将crc右移15位之后加上delta
+ */
 inline uint32_t Mask(uint32_t crc) {
   // Rotate right by 15 bits and add a constant.
   return ((crc >> 15) | (crc << 17)) + kMaskDelta;
 }
 
 // Return the crc whose masked representation is masked_crc.
+/**
+ * 从crc掩码还原crc
+ *
+ * 将crc减去delta之后左移15位
+ */
 inline uint32_t Unmask(uint32_t masked_crc) {
   uint32_t rot = masked_crc - kMaskDelta;
   return ((rot >> 17) | (rot << 15));

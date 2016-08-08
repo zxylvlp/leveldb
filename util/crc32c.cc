@@ -13,6 +13,9 @@
 namespace leveldb {
 namespace crc32c {
 
+/**
+ * table0数组
+ */
 static const uint32_t table0_[256] = {
   0x00000000, 0xf26b8303, 0xe13b70f7, 0x1350f3f4,
   0xc79a971f, 0x35f1141c, 0x26a1e7e8, 0xd4ca64eb,
@@ -79,6 +82,9 @@ static const uint32_t table0_[256] = {
   0x79b737ba, 0x8bdcb4b9, 0x988c474d, 0x6ae7c44e,
   0xbe2da0a5, 0x4c4623a6, 0x5f16d052, 0xad7d5351
 };
+/**
+ * table1数组
+ */
 static const uint32_t table1_[256] = {
   0x00000000, 0x13a29877, 0x274530ee, 0x34e7a899,
   0x4e8a61dc, 0x5d28f9ab, 0x69cf5132, 0x7a6dc945,
@@ -145,6 +151,9 @@ static const uint32_t table1_[256] = {
   0xd98eedc6, 0xca2c75b1, 0xfecbdd28, 0xed69455f,
   0x97048c1a, 0x84a6146d, 0xb041bcf4, 0xa3e32483
 };
+/**
+ * table2数组
+ */
 static const uint32_t table2_[256] = {
   0x00000000, 0xa541927e, 0x4f6f520d, 0xea2ec073,
   0x9edea41a, 0x3b9f3664, 0xd1b1f617, 0x74f06469,
@@ -211,6 +220,9 @@ static const uint32_t table2_[256] = {
   0xe5f54fc1, 0x40b4ddbf, 0xaa9a1dcc, 0x0fdb8fb2,
   0x7b2bebdb, 0xde6a79a5, 0x3444b9d6, 0x91052ba8
 };
+/**
+ * table3数组
+ */
 static const uint32_t table3_[256] = {
   0x00000000, 0xdd45aab8, 0xbf672381, 0x62228939,
   0x7b2231f3, 0xa6679b4b, 0xc4451272, 0x1900b8ca,
@@ -279,10 +291,25 @@ static const uint32_t table3_[256] = {
 };
 
 // Used to fetch a naturally-aligned 32-bit word in little endian byte-order
+/**
+ * 从p中读取一个uint32
+ *
+ * 调用DecodeFixed32实现
+ */
 static inline uint32_t LE_LOAD32(const uint8_t *p) {
   return DecodeFixed32(reinterpret_cast<const char*>(p));
 }
 
+/**
+ * 利用以前的crc和data计算新的crc
+ *
+ * 先定义一个STEP1和一个STEP4，他们都是利用l和p的计算一个下标，利用下标去表里面查查得的结果经过运算是新的l，p则前进读过的几个字节
+ * 先将crc取反得到l
+ * 然后得到第一个4byte对齐的指针x
+ * 如果x小于结尾，则从p到x的范围内调用STEP1
+ * 循环处理如果还有16byte以上则一次处理16byte，如果还有4byte以上则一次处理4byte，如果还有1以上则处理1byte
+ * 最后再返回l取反
+ */
 uint32_t Extend(uint32_t crc, const char* buf, size_t size) {
   const uint8_t *p = reinterpret_cast<const uint8_t *>(buf);
   const uint8_t *e = p + size;

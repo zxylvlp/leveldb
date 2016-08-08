@@ -28,18 +28,38 @@ namespace leveldb {
 
 namespace {
 
+/**
+ * 根据上下文和错误号返回一个Status表示的IO错误
+ */
 static Status IOError(const std::string& context, int err_number) {
   return Status::IOError(context, strerror(err_number));
 }
 
+/**
+ * Posix顺序文件类，继承顺序文件接口类
+ */
 class PosixSequentialFile: public SequentialFile {
  private:
+  /**
+   * 存储文件名
+   */
   std::string filename_;
+  /**
+   * 存储文件结构体指针
+   */
   FILE* file_;
 
  public:
+  /**
+   * 构造函数
+   */
   PosixSequentialFile(const std::string& fname, FILE* f)
       : filename_(fname), file_(f) { }
+  /**
+   * 析构函数
+   *
+   * 在其中调用fclose关闭打开的文件
+   */
   virtual ~PosixSequentialFile() { fclose(file_); }
 
   virtual Status Read(size_t n, Slice* result, char* scratch) {
@@ -57,6 +77,12 @@ class PosixSequentialFile: public SequentialFile {
     return s;
   }
 
+  /**
+   * 跳过n个字节
+   *
+   * 调用fseek将当前文件指针向前移动n个字节
+   * 返回值为状态码，注意如果fseek不出错返回0
+   */
   virtual Status Skip(uint64_t n) {
     if (fseek(file_, n, SEEK_CUR)) {
       return IOError(filename_, errno);
