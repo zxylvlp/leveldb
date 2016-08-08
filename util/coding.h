@@ -54,7 +54,11 @@ extern char* EncodeVarint64(char* dst, uint64_t value);
 
 // Lower-level versions of Get... that read directly from a character buffer
 // without any bounds checking.
-
+/**
+ * 对32位固定编码的int值解码
+ *
+ * 如果是小端机器，直接load即可，否则需要自己移位实现
+ */
 inline uint32_t DecodeFixed32(const char* ptr) {
   if (port::kLittleEndian) {
     // Load the raw bytes
@@ -69,6 +73,11 @@ inline uint32_t DecodeFixed32(const char* ptr) {
   }
 }
 
+/**
+ * 对64位固定编码的int值解码
+ *
+ * 如果是小端机器，直接load即可，否则要调用两次DecodeFixed32然后组合起来
+ */
 inline uint64_t DecodeFixed64(const char* ptr) {
   if (port::kLittleEndian) {
     // Load the raw bytes
@@ -86,6 +95,12 @@ inline uint64_t DecodeFixed64(const char* ptr) {
 extern const char* GetVarint32PtrFallback(const char* p,
                                           const char* limit,
                                           uint32_t* value);
+
+/**
+ * 从指针获得uint32变长解码之后值
+ *
+ * 先走一个快速路径，然后调用GetVarint32PtrFallback
+ */
 inline const char* GetVarint32Ptr(const char* p,
                                   const char* limit,
                                   uint32_t* value) {

@@ -69,7 +69,7 @@ void PutFixed64(std::string* dst, uint64_t value) {
 }
 
 /**
- * int32的变长编码
+ * uint32的变长编码
  *
  * 用每一个byte的最高位做是否是结束，如果是1表示不是结束，如果是0表示是结束
  * 首先将dst拷贝给ptr
@@ -107,7 +107,7 @@ char* EncodeVarint32(char* dst, uint32_t v) {
 }
 
 /**
- * 将int32变长编码，并且append到dst中
+ * 将uint32变长编码，并且append到dst中
  *
  * 先调用EncodeVarint32将v放到一个buf中，
  * 然后将buf按照实际编码长度，append到dst中
@@ -118,6 +118,11 @@ void PutVarint32(std::string* dst, uint32_t v) {
   dst->append(buf, ptr - buf);
 }
 
+/**
+ * uint64的变长编码
+ *
+ * 处理方式类似uint32的变长编码
+ */
 char* EncodeVarint64(char* dst, uint64_t v) {
   static const int B = 128;
   unsigned char* ptr = reinterpret_cast<unsigned char*>(dst);
@@ -129,17 +134,32 @@ char* EncodeVarint64(char* dst, uint64_t v) {
   return reinterpret_cast<char*>(ptr);
 }
 
+/**
+ * 将uint64变长编码，并且append到dst中
+ *
+ * 先调用EncodeVarint64将v放到一个buf中，
+ * 然后将buf按照实际编码长度，append到dst中
+ */
 void PutVarint64(std::string* dst, uint64_t v) {
   char buf[10];
   char* ptr = EncodeVarint64(buf, v);
   dst->append(buf, ptr - buf);
 }
 
+/**
+ * 将一个slice以长度前缀形式放到dst中
+ *
+ * 先将value的长度变长编码放到dst中
+ * 再将value的内容放到dst中
+ */
 void PutLengthPrefixedSlice(std::string* dst, const Slice& value) {
   PutVarint32(dst, value.size());
   dst->append(value.data(), value.size());
 }
 
+/**
+ * 获得v的变长编码的长度
+ */
 int VarintLength(uint64_t v) {
   int len = 1;
   while (v >= 128) {
@@ -149,6 +169,13 @@ int VarintLength(uint64_t v) {
   return len;
 }
 
+/**
+ * 从指针获得uint32变长解码之后值的后备方法
+ *
+ * 从内存地址为[p, limit)的地方扫描，取出指针指向的内容，将内容与2^7与来查看是否后面还有编码
+ * 如果有则将内容与2^7-1求与之后左移 (指针地址-p)*7 位后与返回值求或
+ * 如果没有了则将内容左移 (指针地址-p)*7 位后与返回值求或并返回
+ */
 const char* GetVarint32PtrFallback(const char* p,
                                    const char* limit,
                                    uint32_t* value) {
@@ -168,6 +195,11 @@ const char* GetVarint32PtrFallback(const char* p,
   return NULL;
 }
 
+/**
+ * 从input所指向的slice中获取变长编码的uint32的值
+ *
+ * 调用GetVarint32Ptr来实现，并且将slice中已经读取过的部分截掉
+ */
 bool GetVarint32(Slice* input, uint32_t* value) {
   const char* p = input->data();
   const char* limit = p + input->size();
@@ -180,6 +212,11 @@ bool GetVarint32(Slice* input, uint32_t* value) {
   }
 }
 
+/**
+ * 从指针获得uint64变长解码之后值
+ *
+ * 与GetVarint32PtrFallback的实现类似
+ */
 const char* GetVarint64Ptr(const char* p, const char* limit, uint64_t* value) {
   uint64_t result = 0;
   for (uint32_t shift = 0; shift <= 63 && p < limit; shift += 7) {
@@ -197,6 +234,11 @@ const char* GetVarint64Ptr(const char* p, const char* limit, uint64_t* value) {
   return NULL;
 }
 
+/**
+ * 从input所指向的slice中获取变长编码的uint64的值
+ *
+ * 与GetVarint32的实现类似
+ */
 bool GetVarint64(Slice* input, uint64_t* value) {
   const char* p = input->data();
   const char* limit = p + input->size();
@@ -209,6 +251,13 @@ bool GetVarint64(Slice* input, uint64_t* value) {
   }
 }
 
+/**
+ * 从指针获得长度前缀编码的slice
+ *
+ * 先调用GetVarint32Ptr获得长度前缀
+ * 然后在将后面的内存构建一个slice作为结果
+ * 并将前面读取过的长度截取掉并返回
+ */
 const char* GetLengthPrefixedSlice(const char* p, const char* limit,
                                    Slice* result) {
   uint32_t len;
@@ -219,6 +268,13 @@ const char* GetLengthPrefixedSlice(const char* p, const char* limit,
   return p + len;
 }
 
+/**
+ * 从slice获得长度前缀编码的slice
+ *
+ * 先调用GetVarint32Ptr获得长度前缀
+ * 然后在将后面的内存构建一个slice作为结果
+ * 并将前面读取过的长度截取掉并返回
+ */
 bool GetLengthPrefixedSlice(Slice* input, Slice* result) {
   uint32_t len;
   if (GetVarint32(input, &len) &&
