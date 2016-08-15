@@ -876,12 +876,21 @@ class PosixEnv : public Env {
     return NULL;
   }
 
+  /**
+   * 保护后面几个变量的互斥锁
+   */
   pthread_mutex_t mu_;
+  /**
+   * 用于唤醒后台线程的信号量
+   */
   pthread_cond_t bgsignal_;
   /**
-   *
+   * 用于存储后台线程
    */
   pthread_t bgthread_;
+  /**
+   * 用于存储后台线程是否已经开始
+   */
   bool started_bgthread_;
 
   // Entry per Schedule() call
@@ -901,7 +910,7 @@ class PosixEnv : public Env {
   BGQueue queue_;
 
   /**
-   * 存储上了文件锁的文件的集合
+   * 存储上了文件锁的文件名的集合
    */
   PosixLockTable locks_;
   /**
@@ -910,11 +919,26 @@ class PosixEnv : public Env {
   MmapLimiter mmap_limit_;
 };
 
+/**
+ * 构造函数
+ *
+ * 设置后台线程还没有启动
+ * 并且初始化互斥锁和条件变量
+ */
 PosixEnv::PosixEnv() : started_bgthread_(false) {
   PthreadCall("mutex_init", pthread_mutex_init(&mu_, NULL));
   PthreadCall("cvar_init", pthread_cond_init(&bgsignal_, NULL));
 }
 
+/**
+ * 给后台线程添加一个新任务
+ *
+ * 首先加上互斥锁
+ * 然后判断后台线程是否已经启动了，如果没有启动则设置成启动了并调用pthread_create创建一个后台线程，并且指定一个函数和它的参数让它运行
+ * 然后判断当前队列是否为空，如果为空则调用pthread_cond_signal唤醒后台线程
+ * 并且给队列添加一个元素
+ * 最后在退出函数之前解锁
+ */
 void PosixEnv::Schedule(void (*function)(void*), void* arg) {
   PthreadCall("lock", pthread_mutex_lock(&mu_));
 
@@ -940,6 +964,17 @@ void PosixEnv::Schedule(void (*function)(void*), void* arg) {
   PthreadCall("unlock", pthread_mutex_unlock(&mu_));
 }
 
+/**
+ * 后台线程执行的内容
+ *
+ * 最外层是一个while循环表示年复一年的运行
+ * 下面描述内层的内容
+ * 首先加锁
+ * 然后在while循环中调用pthread_cond_wait，来等待队列不为空，并且防止假唤醒
+ * 如果有人唤醒了，则从队列中取出第一个元素
+ * 然后解锁
+ * 最后调用从队列里面取出来的元素
+ */
 void PosixEnv::BGThread() {
   while (true) {
     // Wait until there is an item that is ready to run
@@ -958,11 +993,21 @@ void PosixEnv::BGThread() {
 }
 
 namespace {
+/**
+ * 用于存储开始线程的状态
+ */
 struct StartThreadState {
   void (*user_function)(void*);
   void* arg;
 };
 }
+
+/**
+ * 开始线程的wrapper
+ *
+ * 调用传进来的StartThreadState
+ * 并且析构它并且返回空
+ */
 static void* StartThreadWrapper(void* arg) {
   StartThreadState* state = reinterpret_cast<StartThreadState*>(arg);
   state->user_function(state->arg);
@@ -970,6 +1015,12 @@ static void* StartThreadWrapper(void* arg) {
   return NULL;
 }
 
+/**
+ * 开始一个线程执行传入的参数
+ *
+ * 首先将传入的参数构建一个StartThreadState，
+ * 然后调用pthread_create创建一个线程并且让他执行StartThreadWrapper并且传入刚创建的StartThreadState
+ */
 void PosixEnv::StartThread(void (*function)(void* arg), void* arg) {
   pthread_t t;
   StartThreadState* state = new StartThreadState;
@@ -981,10 +1032,25 @@ void PosixEnv::StartThread(void (*function)(void* arg), void* arg) {
 
 }  // namespace
 
+/**
+ * 存储单例所需的pthread_once_t
+ */
 static pthread_once_t once = PTHREAD_ONCE_INIT;
+/**
+ * 默认环境，存储单例所需的实际内容
+ */
 static Env* default_env;
+/**
+ * 初始化默认环境，单例过程实际调用的函数
+ */
 static void InitDefaultEnv() { default_env = new PosixEnv; }
 
+/**
+ * 获得当前默认单例环境
+ *
+ * 利用pthread_once调用InitDefaultEnv
+ * 并且返回default_env
+ */
 Env* Env::Default() {
   pthread_once(&once, InitDefaultEnv);
   return default_env;

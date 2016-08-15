@@ -13,12 +13,24 @@
 
 namespace leveldb {
 
+/**
+ * 将num添加到str的尾部
+ *
+ * 首先创建一个buf，调用snprintf将num输出到buf中
+ * 然后将buf添加到str的结尾
+ */
 void AppendNumberTo(std::string* str, uint64_t num) {
   char buf[30];
   snprintf(buf, sizeof(buf), "%llu", (unsigned long long) num);
   str->append(buf);
 }
 
+/**
+ * 将value中的字符处理过不可见字符后追加到str后面
+ *
+ * 对于可见字符，则直接追加到str结尾
+ * 否则将其以16进制形式追加到str结尾
+ */
 void AppendEscapedStringTo(std::string* str, const Slice& value) {
   for (size_t i = 0; i < value.size(); i++) {
     char c = value[i];
@@ -33,12 +45,22 @@ void AppendEscapedStringTo(std::string* str, const Slice& value) {
   }
 }
 
+/**
+ * 将num转换成字符串
+ *
+ * 调用AppendNumberTo实现
+ */
 std::string NumberToString(uint64_t num) {
   std::string r;
   AppendNumberTo(&r, num);
   return r;
 }
 
+/**
+ * 将字符串中的不可见字符做处理后返回
+ *
+ * 调用AppendEscapedStringTo实现
+ */
 std::string EscapeString(const Slice& value) {
   std::string r;
   AppendEscapedStringTo(&r, value);

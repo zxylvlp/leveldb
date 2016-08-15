@@ -9,6 +9,9 @@
 
 namespace leveldb {
 
+/**
+ * 构造函数
+ */
 Options::Options()
     : comparator(BytewiseComparator()),
       create_if_missing(false),

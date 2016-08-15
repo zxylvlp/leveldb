@@ -9,6 +9,9 @@
 
 namespace leveldb {
 
+/**
+ * 每一个bucket可以放置的最大值的数组
+ */
 const double Histogram::kBucketLimit[kNumBuckets] = {
   1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 14, 16, 18, 20, 25, 30, 35, 40, 45,
   50, 60, 70, 80, 90, 100, 120, 140, 160, 180, 200, 250, 300, 350, 400, 450,
@@ -30,6 +33,9 @@ const double Histogram::kBucketLimit[kNumBuckets] = {
   1e200,
 };
 
+/**
+ * 清空直方图
+ */
 void Histogram::Clear() {
   min_ = kBucketLimit[kNumBuckets-1];
   max_ = 0;
@@ -41,6 +47,13 @@ void Histogram::Clear() {
   }
 }
 
+/**
+ * 将value加入到直方图
+ *
+ * 遍历kBucketLimit找到value小于其元素的第一个位置
+ * 将它的数量加一，并且对最大最小值做更新
+ * 将总数，总和，平方和做更新
+ */
 void Histogram::Add(double value) {
   // Linear search is fast enough for our usage in db_bench
   int b = 0;
@@ -55,6 +68,13 @@ void Histogram::Add(double value) {
   sum_squares_ += (value * value);
 }
 
+/**
+ * 将两个直方图做合并
+ *
+ * 将最大最小设为两者中较大和较小的
+ * 将总数量，总和，平方和直接相加
+ * 将数量向量相加
+ */
 void Histogram::Merge(const Histogram& other) {
   if (other.min_ < min_) min_ = other.min_;
   if (other.max_ > max_) max_ = other.max_;
@@ -66,10 +86,22 @@ void Histogram::Merge(const Histogram& other) {
   }
 }
 
+/**
+ * 返回中位数
+ *
+ * 调用Percentile求位于50%的数
+ */
 double Histogram::Median() const {
   return Percentile(50.0);
 }
 
+/**
+ * 返回第p%大的数
+ *
+ * 首先将总数和百分数相乘获得一个位置
+ * 然后对每个桶做遍历，直到到达这个位置，
+ * 对其内部位置做线性拟合，然后返回该位置的数
+ */
 double Histogram::Percentile(double p) const {
   double threshold = num_ * (p / 100.0);
   double sum = 0;
@@ -91,17 +123,30 @@ double Histogram::Percentile(double p) const {
   return max_;
 }
 
+/**
+ * 求平均数
+ *
+ * 总和除以总数
+ */
 double Histogram::Average() const {
   if (num_ == 0.0) return 0;
   return sum_ / num_;
 }
 
+/**
+ * 求标准差
+ *
+ * 参考公式
+ */
 double Histogram::StandardDeviation() const {
   if (num_ == 0.0) return 0;
   double variance = (sum_squares_ * num_ - sum_ * sum_) / (num_ * num_);
   return sqrt(variance);
 }
 
+/**
+ * 将直方图的内容输出到字符串
+ */
 std::string Histogram::ToString() const {
   std::string r;
   char buf[200];
