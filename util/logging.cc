@@ -67,6 +67,16 @@ std::string EscapeString(const Slice& value) {
   return r;
 }
 
+/**
+ * 消耗字符串中的十进制数字
+ *
+ * 如果slice不为空，则从slice中取出第一个字符，
+ * 如果它是数字字符，则将它转换成数字并且将slice最前面的字符去掉，
+ * 并且将它追加到前面提出的数字上面，如果溢出则返回false
+ * 如果不是数字字符，则跳出循环
+ * 最后将提取出来的值赋值给val
+ * 返回提取出的数字的位数是否大于0
+ */
 bool ConsumeDecimalNumber(Slice* in, uint64_t* val) {
   uint64_t v = 0;
   int digits = 0;

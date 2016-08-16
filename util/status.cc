@@ -8,6 +8,12 @@
 
 namespace leveldb {
 
+/**
+ * 拷贝state内容并返回
+ *
+ * 首先获得错误信息长度，然后分配内存长度为其加5，
+ * 将state的内容全部拷贝到分配的内存中并返回内存的头指针
+ */
 const char* Status::CopyState(const char* state) {
   uint32_t size;
   memcpy(&size, state, sizeof(size));
@@ -16,6 +22,9 @@ const char* Status::CopyState(const char* state) {
   return result;
 }
 
+/**
+ * 构造一个状态
+ */
 Status::Status(Code code, const Slice& msg, const Slice& msg2) {
   assert(code != kOk);
   const uint32_t len1 = msg.size();
@@ -33,6 +42,9 @@ Status::Status(Code code, const Slice& msg, const Slice& msg2) {
   state_ = result;
 }
 
+/**
+ * 将状态序列化成字符串
+ */
 std::string Status::ToString() const {
   if (state_ == NULL) {
     return "OK";

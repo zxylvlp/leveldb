@@ -16,15 +16,41 @@
 
 namespace leveldb {
 
+/**
+ * posix的日志记录者
+ */
 class PosixLogger : public Logger {
  private:
+  /**
+   * 文件指针
+   */
   FILE* file_;
+  /**
+   * 获得当前线程id的函数指针
+   */
   uint64_t (*gettid_)();  // Return the thread id for the current thread
  public:
+  /**
+   * 构造函数
+   */
   PosixLogger(FILE* f, uint64_t (*gettid)()) : file_(f), gettid_(gettid) { }
+  /**
+   * 析构函数
+   *
+   * 会调用fclose关闭文件
+   */
   virtual ~PosixLogger() {
     fclose(file_);
   }
+  /**
+   * 以format为格式输出可变参数到log中
+   *
+   * 首先获取到线程id
+   * 然后会做输出，在输出的过程中会做两次尝试，
+   * 第一次使用栈变量做buffer，如果第一次不够用会在第二次使用堆变量做更大的buffer
+   * 将日期和线程id先输出出来，然后将可变参数以format为格式输出出来
+   * 然后再在最后面追加换行符，并调用fwrite和fflush输出到内核缓冲
+   */
   virtual void Logv(const char* format, va_list ap) {
     const uint64_t thread_id = (*gettid_)();
 

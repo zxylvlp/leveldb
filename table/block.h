@@ -13,7 +13,9 @@ namespace leveldb {
 
 struct BlockContents;
 class Comparator;
-
+/**
+ * 块类
+ */
 class Block {
  public:
   // Initialize the block with the specified contents.
@@ -27,9 +29,21 @@ class Block {
  private:
   uint32_t NumRestarts() const;
 
+  /**
+   * 数据的指针
+   */
   const char* data_;
+  /**
+   * 数据的大小
+   */
   size_t size_;
+  /**
+   * restart数组在数据中的偏移位置
+   */
   uint32_t restart_offset_;     // Offset in data_ of restart array
+  /**
+   * 数据是否是这个block拥有的
+   */
   bool owned_;                  // Block owns data_[]
 
   // No copying allowed

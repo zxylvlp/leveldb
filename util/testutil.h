@@ -27,15 +27,30 @@ extern Slice CompressibleString(Random* rnd, double compressed_fraction,
                                 size_t len, std::string* dst);
 
 // A wrapper that allows injection of errors.
+/**
+ * 用于错误注入的环境wrapper
+ */
 class ErrorEnv : public EnvWrapper {
  public:
+  /**
+   * 是否注入可写文件错误
+   */
   bool writable_file_error_;
+  /**
+   * 可写文件错误数量
+   */
   int num_writable_file_errors_;
 
+  /**
+   * 构造函数
+   */
   ErrorEnv() : EnvWrapper(Env::Default()),
                writable_file_error_(false),
                num_writable_file_errors_(0) { }
 
+  /**
+   * 新建可写文件，里面会注入错误
+   */
   virtual Status NewWritableFile(const std::string& fname,
                                  WritableFile** result) {
     if (writable_file_error_) {
@@ -46,6 +61,9 @@ class ErrorEnv : public EnvWrapper {
     return target()->NewWritableFile(fname, result);
   }
 
+  /**
+   * 新建可追加文件，里面会注入错误
+   */
   virtual Status NewAppendableFile(const std::string& fname,
                                    WritableFile** result) {
     if (writable_file_error_) {

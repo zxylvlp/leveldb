@@ -9,6 +9,9 @@
 namespace leveldb {
 namespace test {
 
+/**
+ * 创建长度为len的随机字符串到dst
+ */
 Slice RandomString(Random* rnd, int len, std::string* dst) {
   dst->resize(len);
   for (int i = 0; i < len; i++) {
@@ -17,6 +20,9 @@ Slice RandomString(Random* rnd, int len, std::string* dst) {
   return Slice(*dst);
 }
 
+/**
+ * 创建长度为len的随机key
+ */
 std::string RandomKey(Random* rnd, int len) {
   // Make sure to generate a wide variety of characters so we
   // test the boundary conditions for short-key optimizations.
@@ -30,7 +36,12 @@ std::string RandomKey(Random* rnd, int len) {
   return result;
 }
 
-
+/**
+ * 创建长度为len的可压缩字符串到dst
+ *
+ * 首先生成len*compressed_fraction长度的随机key，
+ * 然后将key重复的加到dst中，直到长度为len
+ */
 extern Slice CompressibleString(Random* rnd, double compressed_fraction,
                                 size_t len, std::string* dst) {
   int raw = static_cast<int>(len * compressed_fraction);

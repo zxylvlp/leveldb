@@ -15,11 +15,22 @@
 
 namespace leveldb {
 
+/**
+ * 获取restart数组的大小
+ *
+ * 从最后面的32位中可以读取到
+ */
 inline uint32_t Block::NumRestarts() const {
   assert(size_ >= sizeof(uint32_t));
   return DecodeFixed32(data_ + size_ - sizeof(uint32_t));
 }
 
+/**
+ * 构造函数
+ *
+ * 大部分从contents中拷贝
+ * 并将restart_offset_设置为restart数组的开始位置
+ */
 Block::Block(const BlockContents& contents)
     : data_(contents.data.data()),
       size_(contents.data.size()),
@@ -37,6 +48,11 @@ Block::Block(const BlockContents& contents)
   }
 }
 
+/**
+ * 析构函数
+ *
+ * 如果数据是属于自己管理的，则对其进行析构
+ */
 Block::~Block() {
   if (owned_) {
     delete[] data_;
@@ -50,6 +66,14 @@ Block::~Block() {
 //
 // If any errors are detected, returns NULL.  Otherwise, returns a
 // pointer to the key delta (just past the three decoded values).
+/**
+ * 对p指向的内容解码，设置shared为共享key长度，设置non_shared为非共享key长度，
+ * 设置value_length为value的长度，并且返回指向非共享key和value的指针
+ *
+ * 首先取出前三个字节，因为是变长编码，
+ * 如果他们求或小于128则将他们分别设置为这三个长度，并且判断不越界后返回p+3的
+ * 否则调用GetVarint32Ptr三次分别取出这三个长度，然后判断不越界后返回p
+ */
 static inline const char* DecodeEntry(const char* p, const char* limit,
                                       uint32_t* shared,
                                       uint32_t* non_shared,
@@ -73,34 +97,80 @@ static inline const char* DecodeEntry(const char* p, const char* limit,
   return p;
 }
 
+/**
+ * 块的迭代器类
+ */
 class Block::Iter : public Iterator {
  private:
+  /**
+   * 比较者
+   */
   const Comparator* const comparator_;
+  /**
+   * 指向数据的指针
+   */
   const char* const data_;      // underlying block contents
+  /**
+   * restart数组的偏移量
+   */
   uint32_t const restarts_;     // Offset of restart array (list of fixed32)
+  /**
+   * restart数组的长度
+   */
   uint32_t const num_restarts_; // Number of uint32_t entries in restart array
 
   // current_ is offset in data_ of current entry.  >= restarts_ if !Valid
+  /**
+   * 当前元素在数据数组中的偏移量，如果迭代器无效会大于等于restarts_
+   */
   uint32_t current_;
+  /**
+   * current_所在的restart块的索引值
+   */
   uint32_t restart_index_;  // Index of restart block in which current_ falls
+  /**
+   * 键
+   */
   std::string key_;
+  /**
+   * 值
+   */
   Slice value_;
+  /**
+   * 状态码
+   */
   Status status_;
 
+  /**
+   * 利用当前比较者比较a和b
+   */
   inline int Compare(const Slice& a, const Slice& b) const {
     return comparator_->Compare(a, b);
   }
 
   // Return the offset in data_ just past the end of the current entry.
+  /**
+   * 返回下一个元素在数据中的offset
+   */
   inline uint32_t NextEntryOffset() const {
     return (value_.data() + value_.size()) - data_;
   }
 
+  /**
+   * 返回第index个restart点的内容
+   */
   uint32_t GetRestartPoint(uint32_t index) {
     assert(index < num_restarts_);
     return DecodeFixed32(data_ + restarts_ + index * sizeof(uint32_t));
   }
 
+  /**
+   * 将迭代器指向第index个restart点指向的前面的位置
+   *
+   * 清空key_
+   * 将restart_index_设置为index
+   * 将value_指向第index个restart点指向的元组，长度为0
+   */
   void SeekToRestartPoint(uint32_t index) {
     key_.clear();
     restart_index_ = index;
@@ -112,6 +182,9 @@ class Block::Iter : public Iterator {
   }
 
  public:
+  /**
+   * 构造函数
+   */
   Iter(const Comparator* comparator,
        const char* data,
        uint32_t restarts,
@@ -125,22 +198,48 @@ class Block::Iter : public Iterator {
     assert(num_restarts_ > 0);
   }
 
+  /**
+   * 判断当前迭代器是否有效
+   *
+   * 如果current_小于restarts_即restart数组的offset时才有效
+   * 否则无效
+   */
   virtual bool Valid() const { return current_ < restarts_; }
+  /**
+   * 获得当前迭代器的状态
+   */
   virtual Status status() const { return status_; }
+  /**
+   * 获取当前迭代器的键
+   */
   virtual Slice key() const {
     assert(Valid());
     return key_;
   }
+  /**
+   * 获取当前迭代器的值
+   */
   virtual Slice value() const {
     assert(Valid());
     return value_;
   }
 
+  /**
+   * 将当前迭代器向前移动一个位置
+   */
   virtual void Next() {
     assert(Valid());
     ParseNextKey();
   }
 
+  /**
+   * 将当前迭代器向后移动一个位置
+   *
+   * 循环根据restart_index_得到这个开始点的内容，
+   * 如果它大于等于最早的current_，如果restart_index_等于0则将迭代器置为失效状态，否则将restart_index_减1
+   * 调用SeekToRestartPoint定位到restart_index_所指向的开始点
+   * 然后循环调用ParseNextKey直到下一个元素的offset大于等于最早的current_
+   */
   virtual void Prev() {
     assert(Valid());
 
@@ -162,6 +261,13 @@ class Block::Iter : public Iterator {
     } while (ParseNextKey() && NextEntryOffset() < original);
   }
 
+  /**
+   * 将当前迭代器指向key_大于等于target的位置
+   *
+   * 首先在retstart数组中二叉搜索找到lower_bound
+   * 然后调用SeekToRestartPoint将迭代器走到lower_bound这个restart点指向的内容
+   * 循环调用ParseNextKey，直到key_大于等于target
+   */
   virtual void Seek(const Slice& target) {
     // Binary search in restart array to find the last restart point
     // with a key < target
@@ -202,11 +308,19 @@ class Block::Iter : public Iterator {
     }
   }
 
+  /**
+   * 先调SeekToRestartPoint走到最前面开始点前面的位置
+   * 再调ParseNextKey走到下一个位置
+   */
   virtual void SeekToFirst() {
     SeekToRestartPoint(0);
     ParseNextKey();
   }
 
+  /**
+   * 先调SeekToRestartPoint走到最后面开始点前面的位置
+   * 然后循环调用ParseNextKey走到下一个位置，直到NextEntryOffset得到的下一个位置大于等于restart数组的位置
+   */
   virtual void SeekToLast() {
     SeekToRestartPoint(num_restarts_ - 1);
     while (ParseNextKey() && NextEntryOffset() < restarts_) {
@@ -215,6 +329,13 @@ class Block::Iter : public Iterator {
   }
 
  private:
+  /**
+   * 将迭代器置为数据败坏错误
+   *
+   * 先将迭代器标识为失效后
+   * 然后将状态置为数据败坏
+   * 然后清空键和值
+   */
   void CorruptionError() {
     current_ = restarts_;
     restart_index_ = num_restarts_;
@@ -223,6 +344,17 @@ class Block::Iter : public Iterator {
     value_.clear();
   }
 
+  /**
+   * 解析到下一个键
+   *
+   * 首先调用NextEntryOffset获得下一个元素在数据中的offset，将其置为current_
+   * 然后将读取指针置为数据指针加上current_，读取的限制指针是数据指针加上restart数组的offset
+   * 如果读取指针大于等于限制指针则将迭代器置为失效状态并且返回false
+   * 调用DecodeEntry获取元素的内容，如果其返回值为空，或者之前key_的大小小于共享大小，则调用CorruptionError表明发生数据败坏并且返回false
+   * 否则将key_中共享大小之外的截取掉，然后追加上非共享长度的读取指针指向的内容，将value_指向当前读取指针加上非共享长度的位置
+   * 循环判断restart_index_+1是否小于restart数组长度并且对它调GetRestartPoint的结果小于current_，是则将restart_index_加1
+   * 最后返回true
+   */
   bool ParseNextKey() {
     current_ = NextEntryOffset();
     const char* p = data_ + current_;
@@ -253,6 +385,13 @@ class Block::Iter : public Iterator {
   }
 };
 
+/**
+ * 创建一个新的迭代器
+ *
+ * 如果当前块的size_过小则返回出错
+ * 然后得到restart数组的长度，如果它是0则返回一个空的迭代器
+ * 否则根据restart数组的长度和偏移量还有数据和比较者创建一个迭代器
+ */
 Iterator* Block::NewIterator(const Comparator* cmp) {
   if (size_ < sizeof(uint32_t)) {
     return NewErrorIterator(Status::Corruption("bad block contents"));
