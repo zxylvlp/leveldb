@@ -14,6 +14,9 @@ namespace leveldb {
 
 struct Options;
 
+/**
+ * 块构建者
+ */
 class BlockBuilder {
  public:
   explicit BlockBuilder(const Options* options);
@@ -35,16 +38,37 @@ class BlockBuilder {
   size_t CurrentSizeEstimate() const;
 
   // Return true iff no entries have been added since the last Reset()
+  /**
+   * 判断是否还没有元素添加进来
+   */
   bool empty() const {
     return buffer_.empty();
   }
 
  private:
+  /**
+   * 选项
+   */
   const Options*        options_;
+  /**
+   * 输出缓冲
+   */
   std::string           buffer_;      // Destination buffer
+  /**
+   * 重启点数组
+   */
   std::vector<uint32_t> restarts_;    // Restart points
+  /**
+   * 从上一个重启点开始到现在经过了多少个元素
+   */
   int                   counter_;     // Number of entries emitted since restart
+  /**
+   * Finish方法是否被调用过
+   */
   bool                  finished_;    // Has Finish() been called?
+  /**
+   * 到现在添加过的最新的key
+   */
   std::string           last_key_;
 
   // No copying allowed

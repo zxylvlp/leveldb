@@ -36,6 +36,11 @@
 
 namespace leveldb {
 
+/**
+ * 构造函数
+ *
+ * 将为0的重启点添加进来
+ */
 BlockBuilder::BlockBuilder(const Options* options)
     : options_(options),
       restarts_(),
@@ -45,6 +50,11 @@ BlockBuilder::BlockBuilder(const Options* options)
   restarts_.push_back(0);       // First restart point is at offset 0
 }
 
+/**
+ * 重置
+ *
+ * 将每一个成员重置为刚刚调用过构造函数之后的样子
+ */
 void BlockBuilder::Reset() {
   buffer_.clear();
   restarts_.clear();
@@ -54,12 +64,23 @@ void BlockBuilder::Reset() {
   last_key_.clear();
 }
 
+/**
+ * 估计当前大小
+ *
+ * 返回buffer_的字节数加上restart数组的字节数加上它长度的字节数
+ */
 size_t BlockBuilder::CurrentSizeEstimate() const {
   return (buffer_.size() +                        // Raw data buffer
           restarts_.size() * sizeof(uint32_t) +   // Restart array
           sizeof(uint32_t));                      // Restart array length
 }
 
+/**
+ * 完成构建
+ *
+ * 将restart数组和其长度添加到buffer_中
+ * 返回buffer_
+ */
 Slice BlockBuilder::Finish() {
   // Append restart array
   for (size_t i = 0; i < restarts_.size(); i++) {
@@ -70,6 +91,15 @@ Slice BlockBuilder::Finish() {
   return Slice(buffer_);
 }
 
+/**
+ * 添加一对kv
+ *
+ * 判断counter_是否小于restart间隔，如果等于或大于，将当前buffer_的大小放到restart数组中，将conuter_置为0，指出共用0个字节
+ * 否则进行比较得到共用多少个字节
+ * 用key的大小减去共用的字节数得到不共用的字节数
+ * 将共用字节数，不共用字节数，值的字节数分别追加到buffer_中
+ * 最后将非共用的字节和值追加到buffer_中
+ */
 void BlockBuilder::Add(const Slice& key, const Slice& value) {
   Slice last_key_piece(last_key_);
   assert(!finished_);
