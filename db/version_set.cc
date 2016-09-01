@@ -930,6 +930,10 @@ class VersionSet::Builder {
   // Save the current state in *v.
   /**
    * 将当前状态保存到版本v
+   *
+   * 遍历每一层，分别进行如下处理
+   * 得到基础版本这一层的所有文件，和这一层增加的文件
+   * 将这两种文件按照最小键递增的顺序调用MaybeAddFile添加到版本v中
    */
   void SaveTo(Version* v) {
     BySmallestKey cmp;
@@ -979,6 +983,12 @@ class VersionSet::Builder {
     }
   }
 
+  /**
+   * 将文件f添加到版本v中指定层级上面
+   *
+   * 首先判断levels_中level层中删除文件列表中是否有f，如果有直接返回
+   * 如果没有，则将f引用数加一后添加到v中指定层的文件列表中
+   */
   void MaybeAddFile(Version* v, int level, FileMetaData* f) {
     if (levels_[level].deleted_files.count(f->number) > 0) {
       // File is deleted: do nothing
@@ -995,6 +1005,11 @@ class VersionSet::Builder {
   }
 };
 
+/**
+ * 构造函数
+ *
+ * 会新建一个版本，并且添加到自己中
+ */
 VersionSet::VersionSet(const std::string& dbname,
                        const Options* options,
                        TableCache* table_cache,
@@ -1016,6 +1031,11 @@ VersionSet::VersionSet(const std::string& dbname,
   AppendVersion(new Version(this));
 }
 
+/**
+ * 析构函数
+ *
+ * 先对当前版本去引用，然后析构描述符文件和描述符日志
+ */
 VersionSet::~VersionSet() {
   current_->Unref();
   assert(dummy_versions_.next_ == &dummy_versions_);  // List must be empty
@@ -1023,6 +1043,13 @@ VersionSet::~VersionSet() {
   delete descriptor_file_;
 }
 
+/**
+ * 将版本v添加到版本集合中
+ *
+ * 首先判断当前版本是否为空，如果不为空则对其去引用
+ * 然后将当前版本置为v并且对v添加引用
+ * 并且将v添加到链表中
+ */
 void VersionSet::AppendVersion(Version* v) {
   // Make "v" current
   assert(v->refs_ == 0);
@@ -1040,6 +1067,18 @@ void VersionSet::AppendVersion(Version* v) {
   v->next_->prev_ = v;
 }
 
+/**
+ * 将edit应用并且记录日志
+ *
+ * 首先判断edit是否有日志文件编号，如果没有将自己的设置给它
+ * 然后判断edit是否有上一个日志文件编号，如果没有则将自己的设置给它
+ * 将自己的下一个文件号和最近序列号设置给这个edit
+ * 然后创建一个新的版本v，然后构造一个builder，将当前版本传进去，然后将edit的修改应用到它上面，并保存到v上
+ * 对新的版本调用Finalize，来预先计算下一次压缩的最佳层级
+ * 如果描述符日志写者为空，则创建一个描述符文件，并且用它创建一个描述符日志写者，调用WriteSnapshot将当前快照写入这个写者
+ * 在一个锁没有保护的区域进行本行后面的操作，将edit编码并且写到日志写者中，如果之前没有日志写者，则将current文件设置为这个描述符文件
+ * 然后将这个版本v添加到当前版本集合中，并且设置将它的日志文件号和上一个日志文件号赋予自己
+ */
 Status VersionSet::LogAndApply(VersionEdit* edit, port::Mutex* mu) {
   if (edit->has_log_number_) {
     assert(edit->log_number_ >= log_number_);
@@ -1125,6 +1164,25 @@ Status VersionSet::LogAndApply(VersionEdit* edit, port::Mutex* mu) {
   return s;
 }
 
+/**
+ * 恢复
+ *
+ * 首先定义了一个日志报告者，如果出现败坏数据的时候就将自己的状态设置为错误状态
+ * 然后读取current文件的内容，利用里面保存的当前描述符文件的文件名，打开一个描述符文件
+ * 然后创建一个构造者，
+ * 创建一个日志报告者，然后从描述符文件中循环读取记录
+ * 对于每一个记录进行以下处理：
+ * 首先创建一个edit对象，然后将记录解码放到edit对象中，然后让构造者应用edit
+ * 并且将edit中的日志编号，前一个日志编号，下一个文件编号和最近的序列号提取出来
+ *
+ * 将前一个日志编号和日志编号设置为使用过
+ * 并且创建一个版本v，将构造者保存到v中
+ * 调用Finalize预计算下一次v的最好压缩层级
+ * 将v添加到版本集合中，将描述符文件号设置为下一个文件号
+ * 将下一个文件号设置为下一个文件号加1
+ * 将最近序列号，日志号，上一次日志号设置为刚刚提取的
+ * 调用ReuseManifest看看文件是否可以重用，如果不能重用将save_manifest设置为真
+ */
 Status VersionSet::Recover(bool *save_manifest) {
   struct LogReporter : public log::Reader::Reporter {
     Status* status;
@@ -1247,6 +1305,16 @@ Status VersionSet::Recover(bool *save_manifest) {
   return s;
 }
 
+/**
+ * 判断描述符文件是否可以重用
+ *
+ * 首先判断配置是否允许重用日志，如果不允许，返回假
+ * 然后调用ParseFileName解析文件，判断它是否是描述符文件，并且文件大小不要过大
+ * 如果不是描述符文件或者文件大小过大则返回假
+ * 打开名为dscname的文件，打开失败返回假
+ * 将描述符文件设置为打开的文件，并且用它创建一个描述符日志写者
+ * 将描述符文件号设置到当前版本集合上并且返回真
+ */
 bool VersionSet::ReuseManifest(const std::string& dscname,
                                const std::string& dscbase) {
   if (!options_->reuse_logs) {
@@ -1278,12 +1346,26 @@ bool VersionSet::ReuseManifest(const std::string& dscname,
   return true;
 }
 
+/**
+ * 标记文件号使用过
+ *
+ * 判断当前传入的文件号是否大于等于下一个文件号
+ * 如果是这样则将下一个文件号设置为传入的文件号加1
+ */
 void VersionSet::MarkFileNumberUsed(uint64_t number) {
   if (next_file_number_ <= number) {
     next_file_number_ = number + 1;
   }
 }
 
+/**
+ * 为下一次压缩预计算最佳层级
+ *
+ * 对每一级的文件列表进行打分
+ * 第0级的打分规则是文件数量除以触发压缩的文件数
+ * 其他级的打分规则是总大小除以这一层的最大大小
+ * 将最佳层级和最佳得分保存到版本v中
+ */
 void VersionSet::Finalize(Version* v) {
   // Precomputed best level for next compaction
   int best_level = -1;
@@ -1321,6 +1403,14 @@ void VersionSet::Finalize(Version* v) {
   v->compaction_score_ = best_score;
 }
 
+/**
+ * 将当前快照写到log中
+ *
+ * 首先创建一个edit对象，并且设置它的比较者
+ * 遍历每一层，将这一层的压缩指针提取出来，设置到edit的相应层上
+ * 遍历每一层，将当前版本这一层的所有文件取出来，分别添加到edit的相应层上
+ * 将edit编码并且为log添加一条记录
+ */
 Status VersionSet::WriteSnapshot(log::Writer* log) {
   // TODO: Break up into multiple records to reduce memory usage on recovery?
 
@@ -1351,12 +1441,18 @@ Status VersionSet::WriteSnapshot(log::Writer* log) {
   return log->AddRecord(record);
 }
 
+/**
+ * 返回第level层文件的总数
+ */
 int VersionSet::NumLevelFiles(int level) const {
   assert(level >= 0);
   assert(level < config::kNumLevels);
   return current_->files_[level].size();
 }
 
+/**
+ * 将当前版本各层文件数量输出到scratch的buffer中
+ */
 const char* VersionSet::LevelSummary(LevelSummaryStorage* scratch) const {
   // Update code if kNumLevels changes
   assert(config::kNumLevels == 7);
@@ -1372,6 +1468,13 @@ const char* VersionSet::LevelSummary(LevelSummaryStorage* scratch) const {
   return scratch->buffer;
 }
 
+/**
+ * 估计ikey在版本v中所有数据中的offset
+ *
+ * 对每一层中的每一个文件进行循环，如果ikey大于等于文件的最大值，则将offset加上文件大小
+ * 如果ikey小于文件的最小值，则跳过这个文件，如果是在第0层以上，由于单调性则可以跳过本层后面的文件
+ * 否则就是在这个文件当中，调用文件的ApproximateOffsetOf进行估计，然后将offset加上这个估计值
+ */
 uint64_t VersionSet::ApproximateOffsetOf(Version* v, const InternalKey& ikey) {
   uint64_t result = 0;
   for (int level = 0; level < config::kNumLevels; level++) {
@@ -1404,6 +1507,11 @@ uint64_t VersionSet::ApproximateOffsetOf(Version* v, const InternalKey& ikey) {
   return result;
 }
 
+/**
+ * 添加活跃文件到live中
+ *
+ * 遍历所有版本的所有层中的所有文件，将文件号添加到live中
+ */
 void VersionSet::AddLiveFiles(std::set<uint64_t>* live) {
   for (Version* v = dummy_versions_.next_;
        v != &dummy_versions_;
@@ -1417,12 +1525,21 @@ void VersionSet::AddLiveFiles(std::set<uint64_t>* live) {
   }
 }
 
+/**
+ * 返回level层文件的总大小
+ */
 int64_t VersionSet::NumLevelBytes(int level) const {
   assert(level >= 0);
   assert(level < config::kNumLevels);
   return TotalFileSize(current_->files_[level]);
 }
 
+/**
+ * 获得最大下层交叠的总字节数
+ *
+ * 遍历第一层到倒数第二层，对其中每一个文件，调用GetOverlappingInputs获得下一层与他交叠的文件
+ * 将这些文件的大小加到一起，返回和最大的一层的和
+ */
 int64_t VersionSet::MaxNextLevelOverlappingBytes() {
   int64_t result = 0;
   std::vector<FileMetaData*> overlaps;
@@ -1443,6 +1560,11 @@ int64_t VersionSet::MaxNextLevelOverlappingBytes() {
 // Stores the minimal range that covers all entries in inputs in
 // *smallest, *largest.
 // REQUIRES: inputs is not empty
+/**
+ * 获得inputs中key的范围
+ *
+ * 遍历inputs，找出他们的最小key和最大key
+ */
 void VersionSet::GetRange(const std::vector<FileMetaData*>& inputs,
                           InternalKey* smallest,
                           InternalKey* largest) {
@@ -1468,6 +1590,11 @@ void VersionSet::GetRange(const std::vector<FileMetaData*>& inputs,
 // Stores the minimal range that covers all entries in inputs1 and inputs2
 // in *smallest, *largest.
 // REQUIRES: inputs is not empty
+/**
+ * 获得inputs1和inputs2合并后key的范围
+ *
+ * 将inputs1和input2合并然后调用GetRange获得范围
+ */
 void VersionSet::GetRange2(const std::vector<FileMetaData*>& inputs1,
                            const std::vector<FileMetaData*>& inputs2,
                            InternalKey* smallest,
@@ -1477,6 +1604,15 @@ void VersionSet::GetRange2(const std::vector<FileMetaData*>& inputs1,
   GetRange(all, smallest, largest);
 }
 
+/**
+ * 创建压缩的的输入迭代器
+ *
+ * 首先创建一个读选项，说明是否要checksum，不需要放到cache中
+ * 然后创建一个迭代器的数组，对于第0层大小为第0层的文件数加1，否则为2
+ * 对于第0层，先把第一个输入每一个文件创建一个迭代器放到数组中，然后将下一个输入创建一个两层迭代器放到数组中
+ * 对于其它层，把两个输入各创建一个迭代器放到数组中
+ * 然后将数组创建为一个合并迭代器并返回
+ */
 Iterator* VersionSet::MakeInputIterator(Compaction* c) {
   ReadOptions options;
   options.verify_checksums = options_->paranoid_checks;
