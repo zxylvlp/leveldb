@@ -1646,6 +1646,21 @@ Iterator* VersionSet::MakeInputIterator(Compaction* c) {
   return result;
 }
 
+/**
+ * 挑选并且返回一个压缩
+ *
+ * 首先看看是否有大小过大引起的压缩和seek过多引起的压缩
+ * 如果都有则优先选取大小过大引起的压缩
+ * 对于大小过大引起的压缩，层级为当前版本的压缩层级，用这个层级创建一个压缩，
+ * 然后循环当前层的所有文件，找到最大键大于这层压缩指针的文件，添加到压缩的第0层输入中
+ * 如果经过刚才的循环，第0层输入还是空的，则将这层第一个文件添加到第0层输入中
+ * 对于seek过多引起的压缩，层级为当前版本的需要压缩文件层级，用这个层级创建一个压缩，
+ * 然后将要压缩的文件添加到压缩的输入的第0层中
+ *
+ * 将压缩的输入版本置为当前版本，并且给当前版本增加一次引用
+ * 如果层级是第0层，则找出与压缩的第0层输入中的文件交叠的文件，添加到压缩的第0层输入
+ * 最后调用SetupOtherInputs设置压缩的第1层输入
+ */
 Compaction* VersionSet::PickCompaction() {
   Compaction* c;
   int level;
@@ -1700,6 +1715,19 @@ Compaction* VersionSet::PickCompaction() {
   return c;
 }
 
+/**
+ * 设置压缩c的第1层输入
+ *
+ * 首先获得输入第0层的范围
+ * 然后利用输入第0层的范围得到与之交叠的输入第1层的文件列表
+ * 再得到输入第0层的范围和输入第1层的范围的并集
+ * 如果输入第1层的文件列表不为空，则用并集范围得到与之交叠的输入第0层的扩展文件列表
+ * 如果第0层的扩展文件列表大于第0层的输入文件列表，并且输入第1层文件总大小加上第0层扩展文件总大小小于kExpandedCompactionByteSizeLimit
+ * 时，继续用第0层扩展范围找到与之交叠的第1层扩展文件列表，如果第1层扩展文件列表与第1层输入文件列表相同，则将第0层输入文件列表设置成第0层扩展文件列表
+ *
+ * 然后利用第0层输入文件的范围和第1层输入文件的范围的并集求出与之交叠的祖父层文件列表
+ * 最后将本层压缩指针设置为最大键
+ */
 void VersionSet::SetupOtherInputs(Compaction* c) {
   const int level = c->level();
   InternalKey smallest, largest;
@@ -1767,6 +1795,17 @@ void VersionSet::SetupOtherInputs(Compaction* c) {
   c->edit_.SetCompactPointer(level, largest);
 }
 
+/**
+ * 根据给定的范围创建压缩
+ *
+ * 首先根据层级和范围找到相关的文件列表
+ * 如果相关文件列表为空则返回NULL
+ * 对于层级大于0的情况，如果需要压缩的文件总大小超过限制则将后面的文件从列表中删去
+ * 然后根据层级创建一个压缩
+ * 将压缩的输入版本设置为当前版本，并且对其增加一次引用
+ * 将压缩的第0层输入文件列表设置为刚刚求出的文件列表
+ * 最后调用SetupOtherInputs设置第1层输入文件列表
+ */
 Compaction* VersionSet::CompactRange(
     int level,
     const InternalKey* begin,
@@ -1802,6 +1841,9 @@ Compaction* VersionSet::CompactRange(
   return c;
 }
 
+/**
+ * 构造函数
+ */
 Compaction::Compaction(int level)
     : level_(level),
       max_output_file_size_(MaxFileSizeForLevel(level)),
@@ -1814,12 +1856,24 @@ Compaction::Compaction(int level)
   }
 }
 
+/**
+ * 析构函数
+ *
+ * 对输入版本降低一次引用
+ */
 Compaction::~Compaction() {
   if (input_version_ != NULL) {
     input_version_->Unref();
   }
 }
 
+/**
+ * 判断这次压缩是否是一次普通的移动
+ *
+ * 如果第0层的输入文件列表仅有一个文件
+ * 第1层的输入文件列表没有文件，并且祖父文件列表的总大小小于kMaxGrandParentOverlapBytes时
+ * 则表示这是一次普通的移动
+ */
 bool Compaction::IsTrivialMove() const {
   // Avoid a move if there is lots of overlapping grandparent data.
   // Otherwise, the move could create a parent file that will require
@@ -1829,6 +1883,9 @@ bool Compaction::IsTrivialMove() const {
           TotalFileSize(grandparents_) <= kMaxGrandParentOverlapBytes);
 }
 
+/**
+ * 将inputs_文件列表中的文件加入edit的删除队列
+ */
 void Compaction::AddInputDeletions(VersionEdit* edit) {
   for (int which = 0; which < 2; which++) {
     for (size_t i = 0; i < inputs_[which].size(); i++) {
@@ -1837,6 +1894,14 @@ void Compaction::AddInputDeletions(VersionEdit* edit) {
   }
 }
 
+/**
+ * 判断user_key是否与祖父之后的层次有关
+ *
+ * 从level_+2层到最后一层循环
+ * 线性查找key所在的文件，如果找到了则返回假
+ * 在查找的过程中将level_ptrs_的每一层设置为最大键大于等于user_key的第一个文件的位置
+ * 如果每一层都没有找到则返回真
+ */
 bool Compaction::IsBaseLevelForKey(const Slice& user_key) {
   // Maybe use binary search to find right entry instead of linear search?
   const Comparator* user_cmp = input_version_->vset_->icmp_.user_comparator();
@@ -1858,6 +1923,17 @@ bool Compaction::IsBaseLevelForKey(const Slice& user_key) {
   return true;
 }
 
+/**
+ * 判断是否应该提前停止
+ *
+ * 循环遍历祖父文件列表，直到文件的最大键大于等于internal_key
+ * 对于seen_key_时，将文件的大小加到overlapped_bytes_上面
+ * 再将grandparent_index_加1
+ *
+ * 将seen_key_设置为真
+ * 判断overlapped_bytes_是否超过最大值，如果超过将overlapped_bytes_设置为0并且返回真
+ * 否则返回假
+ */
 bool Compaction::ShouldStopBefore(const Slice& internal_key) {
   // Scan to find earliest grandparent file that contains key.
   const InternalKeyComparator* icmp = &input_version_->vset_->icmp_;
@@ -1880,6 +1956,11 @@ bool Compaction::ShouldStopBefore(const Slice& internal_key) {
   }
 }
 
+/**
+ * 释放输入版本
+ *
+ * 对输入版本降低一次引用并且将其置为空
+ */
 void Compaction::ReleaseInputs() {
   if (input_version_ != NULL) {
     input_version_->Unref();
