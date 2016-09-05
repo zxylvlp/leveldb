@@ -67,7 +67,13 @@ class Version {
   // return OK.  Else return a non-OK status.  Fills *stats.
   // REQUIRES: lock is not held
   struct GetStats {
+    /**
+     * 查找过的文件
+     */
     FileMetaData* seek_file;
+    /**
+     * 查找过的文件的层级
+     */
     int seek_file_level;
   };
   Status Get(const ReadOptions&, const LookupKey& key, std::string* val,
@@ -129,24 +135,54 @@ class Version {
                           void* arg,
                           bool (*func)(void*, int, FileMetaData*));
 
+  /**
+   * 版本属于的版本集合
+   */
   VersionSet* vset_;            // VersionSet to which this Version belongs
+  /**
+   * 下一个版本的指针
+   */
   Version* next_;               // Next version in linked list
+  /**
+   * 上一个版本的指针
+   */
   Version* prev_;               // Previous version in linked list
+  /**
+   * 这个版本的引用数
+   */
   int refs_;                    // Number of live refs to this version
 
   // List of files per level
+  /**
+   * 这个版本每一层的文件列表
+   */
   std::vector<FileMetaData*> files_[config::kNumLevels];
 
   // Next file to compact based on seek stats.
+  /**
+   * 打算压缩的文件
+   */
   FileMetaData* file_to_compact_;
+  /**
+   * 打算压缩的文件的层级
+   */
   int file_to_compact_level_;
 
   // Level that should be compacted next and its compaction score.
   // Score < 1 means compaction is not strictly needed.  These fields
   // are initialized by Finalize().
+  /**
+   * 打算压缩的得分
+   */
   double compaction_score_;
+  /**
+   * 打算压缩的层级
+   */
   int compaction_level_;
 
+  /**
+   * 构造函数
+   */
   explicit Version(VersionSet* vset)
       : vset_(vset), next_(this), prev_(this), refs_(0),
         file_to_compact_(NULL),
