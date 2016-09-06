@@ -11,11 +11,27 @@
 
 namespace leveldb {
 
+/**
+ * 文件和表结构体
+ */
 struct TableAndFile {
+  /**
+   * 指向随机访问文件的指针
+   */
   RandomAccessFile* file;
+  /**
+   * 指向表的指针
+   */
   Table* table;
 };
 
+/**
+ * 删除记录
+ *
+ * 先将值转为表和文件类型
+ * 然后析构其中的表和文件
+ * 最后将自己析构掉
+ */
 static void DeleteEntry(const Slice& key, void* value) {
   TableAndFile* tf = reinterpret_cast<TableAndFile*>(value);
   delete tf->table;
@@ -23,12 +39,22 @@ static void DeleteEntry(const Slice& key, void* value) {
   delete tf;
 }
 
+/**
+ * 对记录去引用
+ *
+ * 将参数1转为缓存
+ * 将参数2转为缓存中的handle
+ * 然后从缓存中释放handle
+ */
 static void UnrefEntry(void* arg1, void* arg2) {
   Cache* cache = reinterpret_cast<Cache*>(arg1);
   Cache::Handle* h = reinterpret_cast<Cache::Handle*>(arg2);
   cache->Release(h);
 }
 
+/**
+ * 构造函数
+ */
 TableCache::TableCache(const std::string& dbname,
                        const Options* options,
                        int entries)
@@ -38,10 +64,22 @@ TableCache::TableCache(const std::string& dbname,
       cache_(NewLRUCache(entries)) {
 }
 
+/**
+ * 析构函数
+ */
 TableCache::~TableCache() {
   delete cache_;
 }
 
+/**
+ * 根据文件号和文件大小找到文件
+ *
+ * 首先将file_number编码成key，然后根据这个key去cache_里面去查
+ * 如果能查到则将handle的内容设置为相应的value并且返回
+ * 如果查不到，则将数据库名和文件号拼起来形成文件名，并且打开一个这个文件名的随机访问文件，调表的Open方法，利用文件创建一个表，
+ * 然后将相应的文件和表组合成文件和表结构，调cache_的插入方法插入进去，并且将handle的内容设置为刚刚插入进去的值并且返回
+ *
+ */
 Status TableCache::FindTable(uint64_t file_number, uint64_t file_size,
                              Cache::Handle** handle) {
   Status s;
@@ -79,6 +117,15 @@ Status TableCache::FindTable(uint64_t file_number, uint64_t file_size,
   return s;
 }
 
+/**
+ * 根据文件号创建一个迭代器
+ *
+ * 如果tableptr不为空，首先将tableptr的内容清空
+ * 然后根据文件号找到相应的表，从表中创建一个迭代器
+ * 对迭代器注册释放缓存中这张表的函数
+ * 如果tableptr不为空，将tableptr的内容设置为刚刚查到的表
+ * 最后返回注册的迭代器
+ */
 Iterator* TableCache::NewIterator(const ReadOptions& options,
                                   uint64_t file_number,
                                   uint64_t file_size,
@@ -102,6 +149,13 @@ Iterator* TableCache::NewIterator(const ReadOptions& options,
   return result;
 }
 
+/**
+ * 从文件号对应的表中获得键对应的值
+ *
+ * 首先根据文件号调用FindTable找到指定的表，
+ * 在表中调用InternalGet获得相应的值
+ * 用完了表之后在缓存中释放表的引用
+ */
 Status TableCache::Get(const ReadOptions& options,
                        uint64_t file_number,
                        uint64_t file_size,
@@ -118,6 +172,11 @@ Status TableCache::Get(const ReadOptions& options,
   return s;
 }
 
+/**
+ * 从表缓存中删除键为文件号的元素
+ *
+ * 首先将文件号编码成键，然后从cache_里面删除键对应的元素
+ */
 void TableCache::Evict(uint64_t file_number) {
   char buf[sizeof(file_number)];
   EncodeFixed64(buf, file_number);

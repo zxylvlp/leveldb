@@ -11,6 +11,9 @@ namespace leveldb {
 
 // Tag numbers for serialized VersionEdit.  These numbers are written to
 // disk and should not be changed.
+/**
+ * 版本编辑的标记号
+ */
 enum Tag {
   kComparator           = 1,
   kLogNumber            = 2,
@@ -23,6 +26,9 @@ enum Tag {
   kPrevLogNumber        = 9
 };
 
+/**
+ * 清除当前版本编辑
+ */
 void VersionEdit::Clear() {
   comparator_.clear();
   log_number_ = 0;
@@ -38,6 +44,9 @@ void VersionEdit::Clear() {
   new_files_.clear();
 }
 
+/**
+ * 将当前版本编辑编码
+ */
 void VersionEdit::EncodeTo(std::string* dst) const {
   if (has_comparator_) {
     PutVarint32(dst, kComparator);
@@ -85,6 +94,9 @@ void VersionEdit::EncodeTo(std::string* dst) const {
   }
 }
 
+/**
+ * 从输入中获取内部键
+ */
 static bool GetInternalKey(Slice* input, InternalKey* dst) {
   Slice str;
   if (GetLengthPrefixedSlice(input, &str)) {
@@ -95,6 +107,9 @@ static bool GetInternalKey(Slice* input, InternalKey* dst) {
   }
 }
 
+/**
+ * 从输入中获取层级
+ */
 static bool GetLevel(Slice* input, int* level) {
   uint32_t v;
   if (GetVarint32(input, &v) &&
@@ -106,6 +121,9 @@ static bool GetLevel(Slice* input, int* level) {
   }
 }
 
+/**
+ * 从src中解码到当前版本编辑
+ */
 Status VersionEdit::DecodeFrom(const Slice& src) {
   Clear();
   Slice input = src;
@@ -209,6 +227,9 @@ Status VersionEdit::DecodeFrom(const Slice& src) {
   return result;
 }
 
+/**
+ * 返回调试字符串
+ */
 std::string VersionEdit::DebugString() const {
   std::string r;
   r.append("VersionEdit {");

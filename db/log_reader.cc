@@ -11,10 +11,15 @@
 
 namespace leveldb {
 namespace log {
-
+/**
+ * 析构函数
+ */
 Reader::Reporter::~Reporter() {
 }
 
+/**
+ * 构造函数
+ */
 Reader::Reader(SequentialFile* file, Reporter* reporter, bool checksum,
                uint64_t initial_offset)
     : file_(file),
@@ -29,10 +34,23 @@ Reader::Reader(SequentialFile* file, Reporter* reporter, bool checksum,
       resyncing_(initial_offset > 0) {
 }
 
+/**
+ * 析构函数
+ */
 Reader::~Reader() {
   delete[] backing_store_;
 }
 
+/**
+ * 跳到初始偏移量所在块的开始
+ *
+ * 首先利用初始偏移量获得块内偏移量
+ * 再利用前面二者的差得到块的开始位置
+ * 如果块内偏移量到了块尾部，则将快的开始位置置为下一个块，块内偏移量置为0
+ * 将buffer结尾的偏移量置为块的开始位置
+ * 对于块开始位置大于0的时候，将文件跳转到指定位置，如果跳转失败则调ReportDrop报告失败并且返回假
+ * 其他情况返回真
+ */
 bool Reader::SkipToInitialBlock() {
   size_t offset_in_block = initial_offset_ % kBlockSize;
   uint64_t block_start_location = initial_offset_ - offset_in_block;
@@ -57,6 +75,17 @@ bool Reader::SkipToInitialBlock() {
   return true;
 }
 
+/**
+ * 读取记录
+ *
+ * 如果最近一条记录的偏移量小于初始偏移量
+ * 则调用SkipToInitialBlock，跳转到初始偏移量所在块的开始
+ * 然后清空scratch和record
+ * 然后初始化正在读的记录的偏移量为0，初始化记录是片段的为假
+ * 然后进入一个恒为真的循环
+ * 先调用ReadPhysicalRecord获得记录的内容和类型
+ * 然后将物理记录偏移量设置为buffer结尾的偏移量减去buffer的大小减去头部的大小减去内容的大小
+ */
 bool Reader::ReadRecord(Slice* record, std::string* scratch) {
   if (last_record_offset_ < initial_offset_) {
     if (!SkipToInitialBlock()) {
@@ -81,6 +110,9 @@ bool Reader::ReadRecord(Slice* record, std::string* scratch) {
     uint64_t physical_record_offset =
         end_of_buffer_offset_ - buffer_.size() - kHeaderSize - fragment.size();
 
+    /**
+     * 如果正在重同步，则跳过为middle和last的类型的内容，如果遇到除了middle之外的类型都可以设置不是正在重同步了
+     */
     if (resyncing_) {
       if (record_type == kMiddleType) {
         continue;
@@ -92,6 +124,13 @@ bool Reader::ReadRecord(Slice* record, std::string* scratch) {
       }
     }
 
+    /**
+     * 对不同的类型分别处理如下
+     * 对于全类型，如果发现记录是分片的则判断数据是否为空，如果是空则将记录是分片的置为假
+     * 否则报告数据出错
+     * 并且将当前记录的偏移量设置为物理记录的偏移量
+     * 清空scratch，将
+     */
     switch (record_type) {
       case kFullType:
         if (in_fragmented_record) {
@@ -181,14 +220,23 @@ bool Reader::ReadRecord(Slice* record, std::string* scratch) {
   return false;
 }
 
+/**
+ * 返回最近读取的记录的偏移量
+ */
 uint64_t Reader::LastRecordOffset() {
   return last_record_offset_;
 }
 
+/**
+ * 报告数据败坏
+ */
 void Reader::ReportCorruption(uint64_t bytes, const char* reason) {
   ReportDrop(bytes, Status::Corruption(reason));
 }
 
+/**
+ * 报告丢弃了字节
+ */
 void Reader::ReportDrop(uint64_t bytes, const Status& reason) {
   if (reporter_ != NULL &&
       end_of_buffer_offset_ - buffer_.size() - bytes >= initial_offset_) {
@@ -196,6 +244,22 @@ void Reader::ReportDrop(uint64_t bytes, const Status& reason) {
   }
 }
 
+/**
+ * 读取物理记录
+ *
+ * 在一个无限循环中进行以下操作
+ * 如果buffer的大小小于头部大小，则需要判断是否是文件结尾，如果是文件结尾则清空buffer并且返回文件尾
+ * 如果不是文件尾则清空buffer，然后继续从文件中读一个块，并且将buffer结尾的偏移量加上buffer的大小
+ * 如果读取失败则清空buffer报告数据出错并且返回文件尾
+ * 如果读取大小小于块大小则设置到达文件尾，并且重新循环
+ * 然后从buffer_中拿到头，获取其中的长度和类型，如果头大小加上长度大于buffer的大小，先清空buffer,如果到达文件尾则返回到达文件尾，否则报告并返回数据出错
+ * 判断类型是否是0类型并且长度为0，则清空buffer并且返回数据出错
+ * 如果需要检查checksum
+ * 则对比crc，如果对比出错则清空buffer并且设置并返回数据出错
+ * 将读过的数据消费掉
+ * 然后判断buffer的结尾的偏移量减去buffer的大小减去消费的长度是否小于初始偏移量，如果是这样则返回数据出错
+ * 如果前面都没问题则将结果设置为消费的那部分数据，并且返回数据的类型
+ */
 unsigned int Reader::ReadPhysicalRecord(Slice* result) {
   while (true) {
     if (buffer_.size() < kHeaderSize) {

@@ -17,9 +17,15 @@ class SequentialFile;
 
 namespace log {
 
+/**
+ * 读者类型
+ */
 class Reader {
  public:
   // Interface for reporting errors.
+  /**
+   * 报告者类型
+   */
   class Reporter {
    public:
     virtual ~Reporter();
@@ -58,34 +64,70 @@ class Reader {
   uint64_t LastRecordOffset();
 
  private:
+  /**
+   * 指向日志文件的指针
+   */
   SequentialFile* const file_;
+  /**
+   * 指向报告者的指针
+   */
   Reporter* const reporter_;
+  /**
+   * 是否checksum
+   */
   bool const checksum_;
+  /**
+   * 备用存储区
+   */
   char* const backing_store_;
+  /**
+   * 缓冲区
+   */
   Slice buffer_;
+  /**
+   * 是否到达文件尾
+   */
   bool eof_;   // Last Read() indicated EOF by returning < kBlockSize
 
   // Offset of the last record returned by ReadRecord.
+  /**
+   * 最近记录的偏移量
+   */
   uint64_t last_record_offset_;
   // Offset of the first location past the end of buffer_.
+  /**
+   * 缓冲区结尾后面第一个字节的偏移量
+   */
   uint64_t end_of_buffer_offset_;
 
   // Offset at which to start looking for the first record to return
+  /**
+   * 初始偏移量
+   */
   uint64_t const initial_offset_;
 
   // True if we are resynchronizing after a seek (initial_offset_ > 0). In
   // particular, a run of kMiddleType and kLastType records can be silently
   // skipped in this mode
+  /**
+   * 是否在再同步
+   */
   bool resyncing_;
 
   // Extend record types with the following special values
   enum {
+    /**
+     * 到达文件尾
+     */
     kEof = kMaxRecordType + 1,
     // Returned whenever we find an invalid physical record.
     // Currently there are three situations in which this happens:
     // * The record has an invalid CRC (ReadPhysicalRecord reports a drop)
     // * The record is a 0-length record (No drop is reported)
     // * The record is below constructor's initial_offset (No drop is reported)
+    /**
+     * 记录损坏
+     */
     kBadRecord = kMaxRecordType + 2
   };
 

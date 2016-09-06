@@ -18,6 +18,9 @@ namespace leveldb {
 
 class Env;
 
+/**
+ * 表缓存类
+ */
 class TableCache {
  public:
   TableCache(const std::string& dbname, const Options* options, int entries);
@@ -48,9 +51,21 @@ class TableCache {
   void Evict(uint64_t file_number);
 
  private:
+  /**
+   * 指向环境对象的指针
+   */
   Env* const env_;
+  /**
+   * 数据库名
+   */
   const std::string dbname_;
+  /**
+   * 指向选项的指针
+   */
   const Options* options_;
+  /**
+   * 指向缓存的指针
+   */
   Cache* cache_;
 
   Status FindTable(uint64_t file_number, uint64_t file_size, Cache::Handle**);
