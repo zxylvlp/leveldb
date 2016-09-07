@@ -85,6 +85,24 @@ bool Reader::SkipToInitialBlock() {
  * 然后进入一个恒为真的循环
  * 先调用ReadPhysicalRecord获得记录的内容和类型
  * 然后将物理记录偏移量设置为buffer结尾的偏移量减去buffer的大小减去头部的大小减去内容的大小
+ * 如果正在重同步，则跳过为middle和last的类型的内容，如果遇到除了middle之外的类型都可以设置不是正在重同步了
+ * 对不同的类型分别处理如下
+ * 对于全类型，如果发现记录是分片的则判断数据是否为空，如果是空则将记录是分片的置为假
+ * 否则报告数据出错
+ * 并且将当前记录的偏移量设置为物理记录的偏移量
+ * 清空scratch，将record设置为记录内的内容
+ * 将最后记录的偏移量设置成当前记录的偏移量，并且返回真
+ * 如果是开始类型，如果发现记录是分片的则判断数据是否为空，如果是空则将记录是分片的置为假
+ * 否则报告数据出错
+ * 将数据的物理偏移量设置为当前记录的偏移量，然后将读取的内容追加到sratch中，并且标记当前数据是分片的
+ * 如果是中间类型，则判断数据是否是分片的，如果不是则报告数据出错
+ * 如果是则将读取的内容追加到sratch中
+ * 如果是最后类型，则判断数据是否是分片的，如果不是则报告数据出错
+ * 如果是则将读取的内容追加到sratch中，然后将record的内容置为scratch的内容
+ * 并将最近读取的记录的偏移量设置为当前记录的偏移量，并且返回真
+ * 如果是eof类型，判断当前数据是否是分片的，如果是则将scratch清空，最后返回假
+ * 如果是错误记录，判断当前数据是否是分片的，如果是则设置为不分片并且清空scratch
+ * 对于其他情况，输出记录类型，报告数据出错，将数据是否分片设置为假，并且清空scratch
  */
 bool Reader::ReadRecord(Slice* record, std::string* scratch) {
   if (last_record_offset_ < initial_offset_) {
@@ -110,9 +128,6 @@ bool Reader::ReadRecord(Slice* record, std::string* scratch) {
     uint64_t physical_record_offset =
         end_of_buffer_offset_ - buffer_.size() - kHeaderSize - fragment.size();
 
-    /**
-     * 如果正在重同步，则跳过为middle和last的类型的内容，如果遇到除了middle之外的类型都可以设置不是正在重同步了
-     */
     if (resyncing_) {
       if (record_type == kMiddleType) {
         continue;
@@ -124,13 +139,6 @@ bool Reader::ReadRecord(Slice* record, std::string* scratch) {
       }
     }
 
-    /**
-     * 对不同的类型分别处理如下
-     * 对于全类型，如果发现记录是分片的则判断数据是否为空，如果是空则将记录是分片的置为假
-     * 否则报告数据出错
-     * 并且将当前记录的偏移量设置为物理记录的偏移量
-     * 清空scratch，将
-     */
     switch (record_type) {
       case kFullType:
         if (in_fragmented_record) {

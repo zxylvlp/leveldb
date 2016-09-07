@@ -14,6 +14,9 @@ class MemTable;
 
 // WriteBatchInternal provides static methods for manipulating a
 // WriteBatch that we don't want in the public WriteBatch interface.
+/**
+ * 批量写的内部类
+ */
 class WriteBatchInternal {
  public:
   // Return the number of entries in the batch.
@@ -29,10 +32,16 @@ class WriteBatchInternal {
   // this batch.
   static void SetSequence(WriteBatch* batch, SequenceNumber seq);
 
+  /**
+   * 返回rep_的内容
+   */
   static Slice Contents(const WriteBatch* batch) {
     return Slice(batch->rep_);
   }
 
+  /**
+   * 返回rep_的长度
+   */
   static size_t ByteSize(const WriteBatch* batch) {
     return batch->rep_.size();
   }

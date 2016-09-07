@@ -42,8 +42,14 @@ namespace leveldb {
 
 namespace {
 
+/**
+ * 修复者对象
+ */
 class Repairer {
  public:
+  /**
+   * 构造函数
+   */
   Repairer(const std::string& dbname, const Options& options)
       : dbname_(dbname),
         env_(options.env),
@@ -57,6 +63,9 @@ class Repairer {
     table_cache_ = new TableCache(dbname_, &options_, 10);
   }
 
+  /**
+   * 析构函数
+   */
   ~Repairer() {
     delete table_cache_;
     if (owns_info_log_) {
@@ -92,27 +101,83 @@ class Repairer {
   }
 
  private:
+  /**
+   * 表信息结构体
+   */
   struct TableInfo {
     FileMetaData meta;
     SequenceNumber max_sequence;
   };
 
+  /**
+   * 数据库名
+   */
   std::string const dbname_;
+  /**
+   * 指向环境的指针
+   */
   Env* const env_;
+  /**
+   * 内部键比较者
+   */
   InternalKeyComparator const icmp_;
+  /**
+   * 内部filter策略
+   */
   InternalFilterPolicy const ipolicy_;
+  /**
+   * 选项
+   */
   Options const options_;
+  /**
+   * 选项中的信息日志属于自己
+   */
   bool owns_info_log_;
+  /**
+   * 选项中的块缓存属于自己
+   */
   bool owns_cache_;
+  /**
+   * 指向表缓存的指针
+   */
   TableCache* table_cache_;
+  /**
+   * 版本编辑对象
+   */
   VersionEdit edit_;
 
+  /**
+   * 描述符文件名列表
+   */
   std::vector<std::string> manifests_;
+  /**
+   * 表文件号列表
+   */
   std::vector<uint64_t> table_numbers_;
+  /**
+   * 日志文件号列表
+   */
   std::vector<uint64_t> logs_;
+  /**
+   * 表信息列表
+   */
   std::vector<TableInfo> tables_;
+  /**
+   * 下一个文件号
+   */
   uint64_t next_file_number_;
 
+  /**
+   * 找到文件
+   *
+   * 首先找到dbname_目录下面的所有文件名放到文件名列表中
+   * 如果文件名列表为空，返回出错
+   * 遍历文件名列表，并且调用ParseFileName从文件名中解析得到文件号和文件类型
+   * 如果是描述符文件类型，则添加文件名到描述符文件列表中继续循环
+   * 如果文件号加1大于下一个文件号，则将下一个文件号设置为文件号加1
+   * 如果是日志文件类型，则添加文件号到日志文件列表
+   * 如果是表文件类型，则添加文件号到表号列表
+   */
   Status FindFiles() {
     std::vector<std::string> filenames;
     Status status = env_->GetChildren(dbname_, &filenames);
@@ -146,6 +211,11 @@ class Repairer {
     return status;
   }
 
+  /**
+   * 转换日志文件到表格
+   *
+   * 遍历日志文件号列表，
+   */
   void ConvertLogFilesToTables() {
     for (size_t i = 0; i < logs_.size(); i++) {
       std::string logname = LogFileName(dbname_, logs_[i]);
@@ -431,6 +501,9 @@ class Repairer {
     return status;
   }
 
+  /**
+   * 路径名为fname的文件，移动到lost子目录中
+   */
   void ArchiveFile(const std::string& fname) {
     // Move into another directory.  E.g., for
     //    dir/foo
@@ -453,6 +526,11 @@ class Repairer {
 };
 }  // namespace
 
+/**
+ * 修复数据库
+ *
+ * 首先创建一个修复着对象，然后调用它的Run进行处理
+ */
 Status RepairDB(const std::string& dbname, const Options& options) {
   Repairer repairer(dbname, options);
   return repairer.Run();

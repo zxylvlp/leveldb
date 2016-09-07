@@ -27,7 +27,9 @@
 namespace leveldb {
 
 class Slice;
-
+/**
+ * 批量写类
+ */
 class WriteBatch {
  public:
   WriteBatch();
@@ -43,6 +45,9 @@ class WriteBatch {
   void Clear();
 
   // Support for iterating over the contents of a batch.
+  /**
+   * 在批里面迭代的处理帮助类
+   */
   class Handler {
    public:
     virtual ~Handler();
@@ -54,6 +59,9 @@ class WriteBatch {
  private:
   friend class WriteBatchInternal;
 
+  /**
+   * 存放实际内容
+   */
   std::string rep_;  // See comment in write_batch.cc for the format of rep_
 
   // Intentionally copyable

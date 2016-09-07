@@ -11,7 +11,11 @@
 
 namespace leveldb {
 namespace log {
-
+/**
+ * 初始化类型的crc表
+ *
+ * 遍历每一种记录类型，将其计算crc之后保存在type_crc的相应位置
+ */
 static void InitTypeCrc(uint32_t* type_crc) {
   for (int i = 0; i <= kMaxRecordType; i++) {
     char t = static_cast<char>(i);
@@ -19,20 +23,34 @@ static void InitTypeCrc(uint32_t* type_crc) {
   }
 }
 
+/**
+ * 构造函数
+ */
 Writer::Writer(WritableFile* dest)
     : dest_(dest),
       block_offset_(0) {
   InitTypeCrc(type_crc_);
 }
 
+/**
+ * 构造函数
+ */
 Writer::Writer(WritableFile* dest, uint64_t dest_length)
     : dest_(dest), block_offset_(dest_length % kBlockSize) {
   InitTypeCrc(type_crc_);
 }
 
+/**
+ * 析构函数
+ */
 Writer::~Writer() {
 }
 
+/**
+ * 将slice里面的内容添加一条记录到磁盘中
+ *
+ * 在放不下内容的时候拆开逻辑条目为多个物理条目
+ */
 Status Writer::AddRecord(const Slice& slice) {
   const char* ptr = slice.data();
   size_t left = slice.size();
@@ -81,6 +99,13 @@ Status Writer::AddRecord(const Slice& slice) {
   return s;
 }
 
+/**
+ * 发射物理记录
+ *
+ * 首先创建一个头的buf，将长度，类型，和计算出来的crc都保存在里面
+ * 将头buf的内容追加到目标文件，再将实际内容追加到目标文件，然后从刷到内核里面
+ * 最后将块内偏移量加上头和内容大小
+ */
 Status Writer::EmitPhysicalRecord(RecordType t, const char* ptr, size_t n) {
   assert(n <= 0xffff);  // Must fit in two bytes
   assert(block_offset_ + kHeaderSize + n <= kBlockSize);
