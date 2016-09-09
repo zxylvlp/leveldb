@@ -20,6 +20,12 @@ namespace leveldb {
 
 namespace {
 
+/**
+ * 从文件名猜测文件的类型
+ *
+ * 首先从最右边开始找到/，然后提取/右边的文件名，如果找不到就保持不变
+ * 然后根据这个文件名调用ParseFileName将类型提取出来
+ */
 bool GuessType(const std::string& fname, FileType* type) {
   size_t pos = fname.rfind('/');
   std::string basename;
@@ -33,6 +39,9 @@ bool GuessType(const std::string& fname, FileType* type) {
 }
 
 // Notified when log reader encounters corruption.
+/**
+ * 数据出错报告者，在出错时写错误信息到dst_文件中
+ */
 class CorruptionReporter : public log::Reader::Reporter {
  public:
   WritableFile* dst_;
@@ -47,6 +56,14 @@ class CorruptionReporter : public log::Reader::Reporter {
 };
 
 // Print contents of a log file. (*func)() is called on every record.
+/**
+ * 打印日志文件内容
+ *
+ * 根据文件名创建一个文件，然后创建一个数据错误报告者，并且将dst设置为报告者的dst_
+ * 然后根据文件创建一个读者，将报告者传进去
+ * 循环读取数据，每次读取出来一条数据之后调用一次func进行处理
+ * 最后析构创建的文件，并且返回正确
+ */
 Status PrintLogContents(Env* env, const std::string& fname,
                         void (*func)(uint64_t, Slice, WritableFile*),
                         WritableFile* dst) {
@@ -68,9 +85,18 @@ Status PrintLogContents(Env* env, const std::string& fname,
 }
 
 // Called on every item found in a WriteBatch.
+/**
+ * 批量写中元素的打印者
+ */
 class WriteBatchItemPrinter : public WriteBatch::Handler {
  public:
+  /**
+   * 打印目标
+   */
   WritableFile* dst_;
+  /**
+   * 给dst_追加 put key value \n
+   */
   virtual void Put(const Slice& key, const Slice& value) {
     std::string r = "  put '";
     AppendEscapedStringTo(&r, key);
@@ -79,6 +105,9 @@ class WriteBatchItemPrinter : public WriteBatch::Handler {
     r += "'\n";
     dst_->Append(r);
   }
+  /**
+   * 给dst_追加 del key \n
+   */
   virtual void Delete(const Slice& key) {
     std::string r = "  del '";
     AppendEscapedStringTo(&r, key);
@@ -90,6 +119,14 @@ class WriteBatchItemPrinter : public WriteBatch::Handler {
 
 // Called on every log record (each one of which is a WriteBatch)
 // found in a kLogFile.
+/**
+ * 批量写打印者输出到dst中
+ *
+ * 首先打印记录的偏移量pos
+ * 然后创建一个批量写，设置内容为record
+ * 然后打印批量写的序列号
+ * 最后迭代批量写将记录输出
+ */
 static void WriteBatchPrinter(uint64_t pos, Slice record, WritableFile* dst) {
   std::string r = "--- offset ";
   AppendNumberTo(&r, pos);
@@ -115,6 +152,9 @@ static void WriteBatchPrinter(uint64_t pos, Slice record, WritableFile* dst) {
   }
 }
 
+/**
+ *
+ */
 Status DumpLog(Env* env, const std::string& fname, WritableFile* dst) {
   return PrintLogContents(env, fname, WriteBatchPrinter, dst);
 }
@@ -207,6 +247,12 @@ Status DumpTable(Env* env, const std::string& fname, WritableFile* dst) {
 
 }  // namespace
 
+/**
+ * dump名为fname的文件到dst中
+ *
+ * 首先调用GuessType根据文件名得到文件的类型
+ * 根据文件的类型分别调用DumpLog，DumpDescriptor，DumpTable
+ */
 Status DumpFile(Env* env, const std::string& fname, WritableFile* dst) {
   FileType ftype;
   if (!GuessType(fname, &ftype)) {

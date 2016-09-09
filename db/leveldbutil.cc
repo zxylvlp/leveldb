@@ -10,17 +10,34 @@
 namespace leveldb {
 namespace {
 
+/**
+ * 标准输出打印者
+ */
 class StdoutPrinter : public WritableFile {
  public:
+  /**
+   * 向stdout输出data，并且返回ok状态
+   */
   virtual Status Append(const Slice& data) {
     fwrite(data.data(), 1, data.size(), stdout);
     return Status::OK();
   }
+  /**
+   * 直接返回ok状态
+   */
   virtual Status Close() { return Status::OK(); }
   virtual Status Flush() { return Status::OK(); }
   virtual Status Sync() { return Status::OK(); }
 };
 
+/**
+ * dump文件列表中的所有文件到标准输出
+ *
+ * 首先创建一个标准输出打印者
+ * 然后对所有文件调用DumpFile输出到标准输出
+ * 如果中间出错则输出错误信息到标准错误输出并且返回假
+ * 否则返回真
+ */
 bool HandleDumpCommand(Env* env, char** files, int num) {
   StdoutPrinter printer;
   bool ok = true;
@@ -37,6 +54,9 @@ bool HandleDumpCommand(Env* env, char** files, int num) {
 }  // namespace
 }  // namespace leveldb
 
+/**
+ * 打印使用提示符
+ */
 static void Usage() {
   fprintf(
       stderr,
@@ -45,6 +65,12 @@ static void Usage() {
       );
 }
 
+/**
+ * 主函数用于dump文件
+ *
+ * 当第1个参数是dump的时候调用HandleDumpCommand处理dump命令
+ * 否则调用Usage打印使用提示符
+ */
 int main(int argc, char** argv) {
   leveldb::Env* env = leveldb::Env::Default();
   bool ok = true;
