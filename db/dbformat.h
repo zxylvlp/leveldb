@@ -19,15 +19,27 @@ namespace leveldb {
 // Grouping of constants.  We may want to make some of these
 // parameters set via options.
 namespace config {
+/**
+ * 层级数目，默认为7层
+ */
 static const int kNumLevels = 7;
 
 // Level-0 compaction is started when we hit this many files.
+/**
+ * 0层压缩触发器，最大文件数为4
+ */
 static const int kL0_CompactionTrigger = 4;
 
 // Soft limit on number of level-0 files.  We slow down writes at this point.
+/**
+ * 0层写限速触发器，最大文件数是8
+ */
 static const int kL0_SlowdownWritesTrigger = 8;
 
 // Maximum number of level-0 files.  We stop writes at this point.
+/**
+ * 0层停止写触发器，最大文件数是12
+ */
 static const int kL0_StopWritesTrigger = 12;
 
 // Maximum level to which a new compacted memtable is pushed if it
@@ -36,9 +48,15 @@ static const int kL0_StopWritesTrigger = 12;
 // expensive manifest file operations.  We do not push all the way to
 // the largest level since that can generate a lot of wasted disk
 // space if the same key space is being repeatedly overwritten.
+/**
+ * 最大内存表压缩层级，内存表压缩的时候能放入的最低层级为2
+ */
 static const int kMaxMemCompactLevel = 2;
 
 // Approximate gap in bytes between samples of data read during iteration.
+/**
+ * 在迭代的过程过读取样本之间的字节数1M
+ */
 static const int kReadBytesPeriod = 1048576;
 
 }  // namespace config
@@ -48,6 +66,9 @@ class InternalKey;
 // Value types encoded as the last component of internal keys.
 // DO NOT CHANGE THESE ENUM VALUES: they are embedded in the on-disk
 // data structures.
+/**
+ * 值的类型增加或者删除
+ */
 enum ValueType {
   kTypeDeletion = 0x0,
   kTypeValue = 0x1
@@ -58,20 +79,44 @@ enum ValueType {
 // and the value type is embedded as the low 8 bits in the sequence
 // number in internal keys, we need to use the highest-numbered
 // ValueType, not the lowest).
+/**
+ * seek需要的值类型
+ */
 static const ValueType kValueTypeForSeek = kTypeValue;
 
+/**
+ * 序列号类型定义
+ */
 typedef uint64_t SequenceNumber;
 
 // We leave eight bits empty at the bottom so a type and sequence#
 // can be packed together into 64-bits.
+/**
+ * 最大序列号限制
+ */
 static const SequenceNumber kMaxSequenceNumber =
     ((0x1ull << 56) - 1);
 
+/**
+ * 内部键的解析结果类型
+ */
 struct ParsedInternalKey {
+  /**
+   * 用户键
+   */
   Slice user_key;
+  /**
+   * 序列号
+   */
   SequenceNumber sequence;
+  /**
+   * 值类型
+   */
   ValueType type;
 
+  /**
+   * 构造函数
+   */
   ParsedInternalKey() { }  // Intentionally left uninitialized (for speed)
   ParsedInternalKey(const Slice& u, const SequenceNumber& seq, ValueType t)
       : user_key(u), sequence(seq), type(t) { }
@@ -79,6 +124,9 @@ struct ParsedInternalKey {
 };
 
 // Return the length of the encoding of "key".
+/**
+ * 获得内部键的编码长度
+ */
 inline size_t InternalKeyEncodingLength(const ParsedInternalKey& key) {
   return key.user_key.size() + 8;
 }
@@ -95,11 +143,17 @@ extern bool ParseInternalKey(const Slice& internal_key,
                              ParsedInternalKey* result);
 
 // Returns the user key portion of an internal key.
+/**
+ * 从内部键抽取其中的用户键部分
+ */
 inline Slice ExtractUserKey(const Slice& internal_key) {
   assert(internal_key.size() >= 8);
   return Slice(internal_key.data(), internal_key.size() - 8);
 }
 
+/**
+ * 从内部键抽取其中的值类型部分
+ */
 inline ValueType ExtractValueType(const Slice& internal_key) {
   assert(internal_key.size() >= 8);
   const size_t n = internal_key.size();
@@ -110,10 +164,19 @@ inline ValueType ExtractValueType(const Slice& internal_key) {
 
 // A comparator for internal keys that uses a specified comparator for
 // the user key portion and breaks ties by decreasing sequence number.
+/**
+ * 内部键比较者
+ */
 class InternalKeyComparator : public Comparator {
  private:
+  /**
+   * 用户键比较者指针
+   */
   const Comparator* user_comparator_;
  public:
+  /**
+   * 构造函数
+   */
   explicit InternalKeyComparator(const Comparator* c) : user_comparator_(c) { }
   virtual const char* Name() const;
   virtual int Compare(const Slice& a, const Slice& b) const;
@@ -122,16 +185,28 @@ class InternalKeyComparator : public Comparator {
       const Slice& limit) const;
   virtual void FindShortSuccessor(std::string* key) const;
 
+  /**
+   * 返回用户键比较者指针
+   */
   const Comparator* user_comparator() const { return user_comparator_; }
 
   int Compare(const InternalKey& a, const InternalKey& b) const;
 };
 
 // Filter policy wrapper that converts from internal keys to user keys
+/**
+ * 内部键filter策略
+ */
 class InternalFilterPolicy : public FilterPolicy {
  private:
+  /**
+   * 用户键filter策略的指针
+   */
   const FilterPolicy* const user_policy_;
  public:
+  /**
+   * 构造函数
+   */
   explicit InternalFilterPolicy(const FilterPolicy* p) : user_policy_(p) { }
   virtual const char* Name() const;
   virtual void CreateFilter(const Slice* keys, int n, std::string* dst) const;
@@ -141,28 +216,52 @@ class InternalFilterPolicy : public FilterPolicy {
 // Modules in this directory should keep internal keys wrapped inside
 // the following class instead of plain strings so that we do not
 // incorrectly use string comparisons instead of an InternalKeyComparator.
+/**
+ * 内部键
+ */
 class InternalKey {
  private:
+  /**
+   * 内部键存储空间
+   */
   std::string rep_;
  public:
+  /**
+   * 构造函数
+   */
   InternalKey() { }   // Leave rep_ as empty to indicate it is invalid
   InternalKey(const Slice& user_key, SequenceNumber s, ValueType t) {
     AppendInternalKey(&rep_, ParsedInternalKey(user_key, s, t));
   }
 
+  /**
+   * 将s解码设置到rep_中
+   */
   void DecodeFrom(const Slice& s) { rep_.assign(s.data(), s.size()); }
+  /**
+   * 将rep_编码
+   */
   Slice Encode() const {
     assert(!rep_.empty());
     return rep_;
   }
 
+  /**
+   * 返回rep_中的用户键
+   */
   Slice user_key() const { return ExtractUserKey(rep_); }
 
+  /**
+   * 根据解析过的内部键p设置rep_
+   */
   void SetFrom(const ParsedInternalKey& p) {
     rep_.clear();
     AppendInternalKey(&rep_, p);
   }
 
+  /**
+   * 清空rep
+   */
   void Clear() { rep_.clear(); }
 
   std::string DebugString() const;

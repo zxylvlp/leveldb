@@ -153,7 +153,9 @@ static void WriteBatchPrinter(uint64_t pos, Slice record, WritableFile* dst) {
 }
 
 /**
+ * dump名为fname的日志文件到dst中
  *
+ * 调用PrintLogContents实现，传入的批量写打印者
  */
 Status DumpLog(Env* env, const std::string& fname, WritableFile* dst) {
   return PrintLogContents(env, fname, WriteBatchPrinter, dst);
@@ -161,6 +163,13 @@ Status DumpLog(Env* env, const std::string& fname, WritableFile* dst) {
 
 // Called on every log record (each one of which is a WriteBatch)
 // found in a kDescriptorFile.
+/**
+ * 版本编辑打印者
+ *
+ * 首先打印记录的偏移量pos
+ * 然后创建一个版本编辑，设置内容为record
+ * 然后将版本编辑打印成调试字符串
+ */
 static void VersionEditPrinter(uint64_t pos, Slice record, WritableFile* dst) {
   std::string r = "--- offset ";
   AppendNumberTo(&r, pos);
@@ -176,10 +185,23 @@ static void VersionEditPrinter(uint64_t pos, Slice record, WritableFile* dst) {
   dst->Append(r);
 }
 
+/**
+ * dump名为fname的描述符文件到dst中
+ *
+ * 调用PrintLogContents实现，传入的是版本编辑答应着
+ */
 Status DumpDescriptor(Env* env, const std::string& fname, WritableFile* dst) {
   return PrintLogContents(env, fname, VersionEditPrinter, dst);
 }
 
+/**
+ * dump名为fname的表文件到dst中
+ *
+ * 首先根据文件名获得文件大小，并且新建一个随机访问文件对象
+ * 然后利用文件对象打开一个表对象
+ * 然后利用表对象创建一个它的迭代器，并且设置它不要填充缓存
+ * 然后从头到尾迭代迭代器，将迭代到的数据输出，输出过程中对不可见字符进行了解码
+ */
 Status DumpTable(Env* env, const std::string& fname, WritableFile* dst) {
   uint64_t file_size;
   RandomAccessFile* file = NULL;
