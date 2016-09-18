@@ -267,11 +267,21 @@ class InternalKey {
   std::string DebugString() const;
 };
 
+/**
+ * 内部键的比较函数
+ *
+ * 将内部键编码然后进行比较
+ */
 inline int InternalKeyComparator::Compare(
     const InternalKey& a, const InternalKey& b) const {
   return Compare(a.Encode(), b.Encode());
 }
 
+/**
+ * 解析内部键
+ *
+ * 将内部键中的用户键、序列号和值类型提取出来设置到结果中
+ */
 inline bool ParseInternalKey(const Slice& internal_key,
                              ParsedInternalKey* result) {
   const size_t n = internal_key.size();
@@ -285,6 +295,9 @@ inline bool ParseInternalKey(const Slice& internal_key,
 }
 
 // A helper class useful for DBImpl::Get()
+/**
+ * 查找键
+ */
 class LookupKey {
  public:
   // Initialize *this for looking up user_key at a snapshot with
@@ -294,12 +307,21 @@ class LookupKey {
   ~LookupKey();
 
   // Return a key suitable for lookup in a MemTable.
+  /**
+   * 返回内存表中的键，即用户键的长度、用户键和标记
+   */
   Slice memtable_key() const { return Slice(start_, end_ - start_); }
 
   // Return an internal key (suitable for passing to an internal iterator)
+  /**
+   * 返回内部键，即用户键和标记
+   */
   Slice internal_key() const { return Slice(kstart_, end_ - kstart_); }
 
   // Return the user key
+  /**
+   * 返回用户键
+   */
   Slice user_key() const { return Slice(kstart_, end_ - kstart_ - 8); }
 
  private:
@@ -310,9 +332,21 @@ class LookupKey {
   //                                    <-- end_
   // The array is a suitable MemTable key.
   // The suffix starting with "userkey" can be used as an InternalKey.
+  /**
+   * 内存表中的键的开始位置
+   */
   const char* start_;
+  /**
+   * 内部键的开始位置
+   */
   const char* kstart_;
+  /**
+   * 标记后面的位置
+   */
   const char* end_;
+  /**
+   * 临时空间
+   */
   char space_[200];      // Avoid allocation for short keys
 
   // No copying allowed
@@ -320,6 +354,9 @@ class LookupKey {
   void operator=(const LookupKey&);
 };
 
+/**
+ * 析构函数
+ */
 inline LookupKey::~LookupKey() {
   if (start_ != space_) delete[] start_;
 }
