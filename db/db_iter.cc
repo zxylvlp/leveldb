@@ -236,6 +236,16 @@ inline bool DBIter::ParseKey(ParsedInternalKey* ikey) {
   }
 }
 
+/**
+ * 将数据库迭代器向后移动一次
+ *
+ * 首先判断上次迭代的方向，如果是逆向则进行如下操作：
+ * 首先判断内部迭代器是否有效，如果无效，说明现在迭代到了第一个元素的前的一个，则调用内部迭代器SeekToFirst指向第一个元素
+ * 如果有效，则直接调用内部迭代器的Next指向下一个元素
+ * 继续判断内部迭代器是否有效，如果无效则将当前迭代器置为无效并且清空saved_key_返回，如果有效则继续
+ * 如果是正向则将当前的键提取用户键保存到saved_key_中
+ * 最后调用FindNextUserEntry找到saved_key_后面的一个键值对
+ */
 void DBIter::Next() {
   assert(valid_);
 
@@ -263,6 +273,15 @@ void DBIter::Next() {
   FindNextUserEntry(true, &saved_key_);
 }
 
+/**
+ * 找到下一个用户键值对
+ *
+ * 只要内部迭代器有效就不断迭代内部迭代器，每当迭代出一个内部键之后
+ * 调用ParseKey将内部键解析，并且判断它的序列号是否小于等于当前序列号，如果不是则继续迭代下一个
+ * 如果是则判断内部键的类型，如果是删除类型，则将skip设置为内部键中的用户键，并且将skipping设置为真
+ * 如果是值类型，则判断是否是skipping并且内部键中的用户键<=skip，如果是则跳过继续循环，如果不是则将valid_设置成真，并且将saved_key_清空返回
+ * 如果内部迭代器迭代失效了还没有返回，则将valid_设置为假，并且将saved_key_清空返回
+ */
 void DBIter::FindNextUserEntry(bool skipping, std::string* skip) {
   // Loop until we hit an acceptable entry to yield
   assert(iter_->Valid());
@@ -295,6 +314,15 @@ void DBIter::FindNextUserEntry(bool skipping, std::string* skip) {
   valid_ = false;
 }
 
+/**
+ * 将数据库迭代器向前移动一次
+ *
+ * 如果当前迭代方向是正向需要做如下操作：
+ * 首先将当前内部迭代器指向的内部键提取出用户键并且保存到saved_key_中
+ * 然后向前迭代内部迭代器，直到内部迭代器指向的用户键小于saved_key，如果过程中内部迭代器失效则将valid_置为假，并且清空saved_key_和saved_value_返回
+ * 然后将方向置为反向
+ * 最后调用FindPrevUserEntry找到上一个用户键值对
+ */
 void DBIter::Prev() {
   assert(valid_);
 
@@ -322,6 +350,20 @@ void DBIter::Prev() {
   FindPrevUserEntry();
 }
 
+/**
+ * 找到上一个用户键值对
+ *
+ * 首先设置值类型的初始值为删除类型
+ * 然后迭代内部迭代器，首先将内部迭代器的内部键进行解析，判断其序列号是否小于等于当前序列号，如果不是则继续迭代
+ * 如果是则首先判断值类型是否不是删除类型，并且当前内部键的用户键小于saved_key_，如果这样可以跳出迭代
+ * 将值类型设置为内部键的类型
+ * 如果内部键的类型是删除类型，则清空saved_key_和saved_value_继续迭代
+ * 如果内部键的类型是值类型，则将saved_key_设置为内部键中的用户键，将saved_value_设置为迭代器中的值
+ * 如果迭代器没有失效就继续迭代
+ *
+ * 如果现在的值类型是删除类型，说明一直没有找到对应的键值对，则将valid_置为假，清空saved_key_和saved_value_
+ * 否则将valid_置为真
+ */
 void DBIter::FindPrevUserEntry() {
   assert(direction_ == kReverse);
 
@@ -364,6 +406,16 @@ void DBIter::FindPrevUserEntry() {
   }
 }
 
+/**
+ * 将数据库迭代器指向大于等于target的最前面的位置
+ *
+ * 首先将迭代方向设置为向前
+ * 然后清空saved_key_和saved_value_
+ * 然后将saved_key_设置为target+当前序列号+值类型
+ * 然后调用内部迭代器进行seek
+ * 如果内部迭代器失效则将valid_置为假
+ * 否则调用FindNextUserEntry去寻找大于等于target的最前面的位置
+ */
 void DBIter::Seek(const Slice& target) {
   direction_ = kForward;
   ClearSavedValue();
@@ -378,6 +430,15 @@ void DBIter::Seek(const Slice& target) {
   }
 }
 
+/**
+ * 将数据库迭代器移动到最开始的位置
+ *
+ * 首先将方向设置为向前
+ * 然后清空saved_value_
+ * 然后将内部迭代器置为最开始的位置
+ * 如果内部迭代器失效则将valid_置为假
+ * 否则调用FindNextUserEntry找到下一个用户键
+ */
 void DBIter::SeekToFirst() {
   direction_ = kForward;
   ClearSavedValue();
@@ -389,6 +450,14 @@ void DBIter::SeekToFirst() {
   }
 }
 
+/**
+ * 将数据库迭代器移动到最末尾的位置
+ *
+ * 首先将方向设置为反向
+ * 然后清空saved_value_
+ * 然后将内部迭代器指向最后面的位置
+ * 调用FindPrevUserEntry找到上一个用户键
+ */
 void DBIter::SeekToLast() {
   direction_ = kReverse;
   ClearSavedValue();
@@ -398,6 +467,9 @@ void DBIter::SeekToLast() {
 
 }  // anonymous namespace
 
+/**
+ * 创建一个数据库迭代器
+ */
 Iterator* NewDBIterator(
     DBImpl* db,
     const Comparator* user_key_comparator,

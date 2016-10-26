@@ -159,41 +159,94 @@ class DBImpl : public DB {
   bool bg_compaction_scheduled_;
 
   // Information for a manual compaction
+  /**
+   * 手工合并类
+   */
   struct ManualCompaction {
+    /**
+     * 合并的层级
+     */
     int level;
+    /**
+     * 是否完成
+     */
     bool done;
+    /**
+     * 合并的开始键
+     */
     const InternalKey* begin;   // NULL means beginning of key range
+    /**
+     * 合并的结束键
+     */
     const InternalKey* end;     // NULL means end of key range
+    /**
+     * 跟踪合并过程的临时存储
+     */
     InternalKey tmp_storage;    // Used to keep track of compaction progress
   };
+  /**
+   * 指向手工合并的指针
+   */
   ManualCompaction* manual_compaction_;
 
+  /**
+   * 指向版本集合的指针
+   */
   VersionSet* versions_;
 
   // Have we encountered a background error in paranoid mode?
+  /**
+   * 后台错误状态码
+   */
   Status bg_error_;
 
   // Per level compaction stats.  stats_[level] stores the stats for
   // compactions that produced data for the specified "level".
+  /**
+   * 合并统计信息类
+   */
   struct CompactionStats {
+    /**
+     * 微秒数
+     */
     int64_t micros;
+    /**
+     * 读取的字节数
+     */
     int64_t bytes_read;
+    /**
+     * 写入的字节数
+     */
     int64_t bytes_written;
 
+    /**
+     * 构造函数
+     */
     CompactionStats() : micros(0), bytes_read(0), bytes_written(0) { }
 
+    /**
+     * 把另一个合并统计信息对象加到自己上面来
+     */
     void Add(const CompactionStats& c) {
       this->micros += c.micros;
       this->bytes_read += c.bytes_read;
       this->bytes_written += c.bytes_written;
     }
   };
+  /**
+   * 保存每一层的合并统计信息
+   */
   CompactionStats stats_[config::kNumLevels];
 
   // No copying allowed
   DBImpl(const DBImpl&);
   void operator=(const DBImpl&);
 
+  /**
+   * 返回用户键比较者
+   *
+   * 从当前内部键比较者中拿到用户键比较者
+   */
   const Comparator* user_comparator() const {
     return internal_comparator_.user_comparator();
   }
