@@ -119,43 +119,115 @@ class DBImpl : public DB {
       EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 
   // Constant after construction
+  /**
+   * 指向环境的指针
+   */
   Env* const env_;
+  /**
+   * 内部键比较者
+   */
   const InternalKeyComparator internal_comparator_;
+  /**
+   * 内部键filter策略
+   */
   const InternalFilterPolicy internal_filter_policy_;
+  /**
+   * 用于控制数据库行为的选项
+   */
   const Options options_;  // options_.comparator == &internal_comparator_
+  /**
+   * 是否拥有info_log
+   */
   bool owns_info_log_;
+  /**
+   * 是否拥有缓存
+   */
   bool owns_cache_;
+  /**
+   * 数据库名
+   */
   const std::string dbname_;
 
   // table_cache_ provides its own synchronization
+  /**
+   * 指向表缓存的指针
+   */
   TableCache* table_cache_;
 
   // Lock over the persistent DB state.  Non-NULL iff successfully acquired.
+  /**
+   * 指向数据库全局锁的指针
+   */
   FileLock* db_lock_;
 
   // State below is protected by mutex_
+  /**
+   * 保护下面状态的互斥锁
+   */
   port::Mutex mutex_;
+  /**
+   * 表示正在关闭
+   */
   port::AtomicPointer shutting_down_;
+  /**
+   * 等后台完成的条件变量
+   */
   port::CondVar bg_cv_;          // Signalled when background work finishes
+  /**
+   * 指向内存表的指针
+   */
   MemTable* mem_;
+  /**
+   * 指向正在被合并的内存表的指针
+   */
   MemTable* imm_;                // Memtable being compacted
+  /**
+   * 表示是否有正在合并的内存表
+   */
   port::AtomicPointer has_imm_;  // So bg thread can detect non-NULL imm_
+  /**
+   * 指向日志文件的指针
+   */
   WritableFile* logfile_;
+  /**
+   * 日志文件的文件号
+   */
   uint64_t logfile_number_;
+  /**
+   * 指向日志写者的指针
+   */
   log::Writer* log_;
+  /**
+   * 随机种子
+   */
   uint32_t seed_;                // For sampling.
 
   // Queue of writers.
+  /**
+   * 写者队列
+   */
   std::deque<Writer*> writers_;
+  /**
+   * 指向批量写的指针
+   */
   WriteBatch* tmp_batch_;
 
+  /**
+   * 快照列表
+   */
   SnapshotList snapshots_;
 
   // Set of table files to protect from deletion because they are
   // part of ongoing compactions.
+  /**
+   * 不能被删除的表文件集合
+   */
   std::set<uint64_t> pending_outputs_;
 
   // Has a background compaction been scheduled or is running?
+  /**
+   * 后台合并是否被调度
+   */
   bool bg_compaction_scheduled_;
 
   // Information for a manual compaction

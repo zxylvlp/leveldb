@@ -35,44 +35,109 @@
 
 namespace leveldb {
 
+/**
+ * 非表缓存文件数
+ */
 const int kNumNonTableCacheFiles = 10;
 
 // Information kept for every waiting writer
+/**
+ * 数据库写者类
+ */
 struct DBImpl::Writer {
+  /**
+   * 状态信息
+   */
   Status status;
+  /**
+   * 指向批量写的指针
+   */
   WriteBatch* batch;
+  /**
+   * 是否sync磁盘
+   */
   bool sync;
+  /**
+   * 是否完成
+   */
   bool done;
+  /**
+   * 等待写完的条件变量
+   */
   port::CondVar cv;
 
+  /**
+   * 构造函数
+   */
   explicit Writer(port::Mutex* mu) : cv(mu) { }
 };
 
+/**
+ * 合并状态类
+ */
 struct DBImpl::CompactionState {
+  /**
+   * 指向合并的指针
+   */
   Compaction* const compaction;
 
   // Sequence numbers < smallest_snapshot are not significant since we
   // will never have to service a snapshot below smallest_snapshot.
   // Therefore if we have seen a sequence number S <= smallest_snapshot,
   // we can drop all entries for the same key with sequence numbers < S.
+  /**
+   * 最小快照序列号
+   */
   SequenceNumber smallest_snapshot;
 
   // Files produced by compaction
+  /**
+   * 合并的输出类
+   */
   struct Output {
+    /**
+     * 文件号
+     */
     uint64_t number;
+    /**
+     * 文件大小
+     */
     uint64_t file_size;
+    /**
+     * 最小最大键的范围
+     */
     InternalKey smallest, largest;
   };
+  /**
+   * 合并输出的数组
+   */
   std::vector<Output> outputs;
 
   // State kept for output being generated
+  /**
+   * 指向输出文件的指针
+   */
   WritableFile* outfile;
+  /**
+   * 指向表构建者的指针
+   */
   TableBuilder* builder;
 
+  /**
+   * 合并的总大小
+   */
   uint64_t total_bytes;
 
+  /**
+   * 返回当前输出
+   *
+   * 返回合并输出数组的最后一个元素
+   */
   Output* current_output() { return &outputs[outputs.size()-1]; }
 
+  /**
+   * 构造函数
+   */
   explicit CompactionState(Compaction* c)
       : compaction(c),
         outfile(NULL),
@@ -82,11 +147,27 @@ struct DBImpl::CompactionState {
 };
 
 // Fix user-supplied options to be reasonable
+/**
+ * 修剪到指定范围
+ *
+ * 将ptr的范围控制在最大值和最小值之间，如果超过边界就设置成边界值
+ */
 template <class T,class V>
 static void ClipToRange(T* ptr, V minvalue, V maxvalue) {
   if (static_cast<V>(*ptr) > maxvalue) *ptr = maxvalue;
   if (static_cast<V>(*ptr) < minvalue) *ptr = minvalue;
 }
+
+/**
+ * 规范化数据库选项
+ *
+ * 首先拷贝src到新对象result中
+ * 将result的比较者设置为icmp
+ * 看看src中是否有filter策略，如果有则将ipolicy设置为result的filter策略
+ * 将result的最大打开文件数、写buffer大小、块大小分别修剪到指定的范围
+ * 如果result的info_log是空，则创建一个新的日志记录者给它
+ * 如果result的块缓存是空，则创建一个块缓存给它
+ */
 Options SanitizeOptions(const std::string& dbname,
                         const InternalKeyComparator* icmp,
                         const InternalFilterPolicy* ipolicy,
@@ -113,6 +194,9 @@ Options SanitizeOptions(const std::string& dbname,
   return result;
 }
 
+/**
+ * 构造函数
+ */
 DBImpl::DBImpl(const Options& raw_options, const std::string& dbname)
     : env_(raw_options.env),
       internal_comparator_(raw_options.comparator),
@@ -144,6 +228,16 @@ DBImpl::DBImpl(const Options& raw_options, const std::string& dbname)
                              &internal_comparator_);
 }
 
+/**
+ * 析构函数
+ *
+ * 首先在互斥锁的保护下，将正在关闭的标志打开
+ * 然后判断后台合并是否在调度，如果在调度则等待其结束
+ * 解除互斥锁
+ *
+ * 如果数据库锁存在，则析构它
+ * 然后对在构造时创建的对象进行析构
+ */
 DBImpl::~DBImpl() {
   // Wait for background work to finish
   mutex_.Lock();
@@ -173,6 +267,15 @@ DBImpl::~DBImpl() {
   }
 }
 
+/**
+ * 创建新的数据库
+ *
+ * 首先创建一个版本编辑对象db
+ * 然后设置其比较者名，log文件号0，下一个文件号2，最近序列号0
+ * 然后根据数据库名和1拼成并且打开一个描述符文件
+ * 然后将new_db编码成一条记录，用日志方式写到描述符文件中
+ * 然后修改当前文件，使其指向新的描述符文件
+ */
 Status DBImpl::NewDB() {
   VersionEdit new_db;
   new_db.SetComparatorName(user_comparator()->Name());
@@ -205,6 +308,12 @@ Status DBImpl::NewDB() {
   return s;
 }
 
+/**
+ * 将错误状态s修改为正常状态
+ *
+ * 如果是正确状态或者是过度检查方式时直接返回
+ * 否则记录一条日志，并且将状态设置为正常状态
+ */
 void DBImpl::MaybeIgnoreError(Status* s) const {
   if (s->ok() || options_.paranoid_checks) {
     // No change needed
@@ -214,6 +323,20 @@ void DBImpl::MaybeIgnoreError(Status* s) const {
   }
 }
 
+/**
+ * 删除多余文件
+ *
+ * 如果遇到后台错误，则直接返回
+ * 然后将pending_outputs中的所有文件号提取出来存到live中，并且添加到versions_中的活跃文件列表中
+ * 获得当前数据库目录下的所有文件
+ * 遍历每一个文件，解析出其类型和文件号
+ * 如果是日志类型，则文件号>=版本集合的日志文件号或者是文件号==版本集合的先一个日志文件号则保留
+ * 如果是描述符类型，则文件号>=版本集合的描述符文件号则保留
+ * 如果是表类型或者临时类型，则文件号在live中则保留
+ * 如果是当前、锁、info日志类型则保留
+ *
+ * 如果不需要保留，则将其从表缓存中去除（如果是表文件的话）之后删除
+ */
 void DBImpl::DeleteObsoleteFiles() {
   if (!bg_error_.ok()) {
     // After a background error, we don't know whether a new version may
