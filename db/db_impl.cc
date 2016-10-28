@@ -393,6 +393,16 @@ void DBImpl::DeleteObsoleteFiles() {
   }
 }
 
+/**
+ * 恢复数据库
+ *
+ * 首先创建名为dbname_的目录
+ * 在此目录中创建锁文件
+ * 然后判断current文件是否存在，如果不存在就调用NewDB创建
+ * 调用版本集合对象的恢复函数
+ * 获取当前目录中的所有文件，找到其中文件号大于等于版本集合日志号的所有日志文件
+ * 将他们从小到大进行排序之后分别调用RecoverLogFile回放日志同时在版本集合中标记文件已经使用过同时使用日志中的大序列号替代版本集合中的序列号
+ */
 Status DBImpl::Recover(VersionEdit* edit, bool *save_manifest) {
   mutex_.AssertHeld();
 
@@ -484,6 +494,11 @@ Status DBImpl::Recover(VersionEdit* edit, bool *save_manifest) {
   return Status::OK();
 }
 
+/**
+ * 恢复日志文件
+ *
+ * 首先定义一个日志报告者
+ */
 Status DBImpl::RecoverLogFile(uint64_t log_number, bool last_log,
                               bool* save_manifest, VersionEdit* edit,
                               SequenceNumber* max_sequence) {
@@ -607,6 +622,17 @@ Status DBImpl::RecoverLogFile(uint64_t log_number, bool last_log,
   return status;
 }
 
+/**
+ * 将memtable中的数据dump到磁盘并且根据base版本修改版本编辑edit
+ *
+ * 首先创建一个文件元信息对象，设置其文件号为新分配的文件号
+ * 将这个文件号插入到pending_outputs_中保护起来
+ * 调用BuildTable将memtable中的数据写到文件元信息指定的文件中
+ * 将这个文件号从pending_outputs_中删掉
+ * 如果base不为空，则根据memtable键的范围选择添加到哪一层
+ * 对edit中的指定层添加一个文件
+ * 对指定层上的合并统计信息进行修改
+ */
 Status DBImpl::WriteLevel0Table(MemTable* mem, VersionEdit* edit,
                                 Version* base) {
   mutex_.AssertHeld();
@@ -1567,6 +1593,15 @@ bool DBImpl::GetProperty(const Slice& property, std::string* value) {
   return false;
 }
 
+/**
+ * 从大小为n的range数组中分别估计其大小放到sizes数组中
+ *
+ * 首先从版本集合中取出当前版本，对当前版本增加一次引用
+ * 分别对每一个range，取出其开始键和结束建
+ * 得到这两个键在当前版本中的offset
+ * 将size设置成结束键的offset-开始键的offset
+ * 对当前版本去掉一次引用
+ */
 void DBImpl::GetApproximateSizes(
     const Range* range, int n,
     uint64_t* sizes) {
@@ -1595,20 +1630,49 @@ void DBImpl::GetApproximateSizes(
 
 // Default implementations of convenience methods that subclasses of DB
 // can call if they wish
+/**
+ * 添加一个键值对
+ *
+ * 首先创建一个批量写对象，然后将键值对添加到批量写对象中
+ * 最后调用Write方法将批量写对象写入数据库
+ */
 Status DB::Put(const WriteOptions& opt, const Slice& key, const Slice& value) {
   WriteBatch batch;
   batch.Put(key, value);
   return Write(opt, &batch);
 }
 
+/**
+ * 删除一个键对应的键值对
+ *
+ * 首先创建一个批量写对象，然后将删除添加到批量写对象中
+ * 最后调用Write方法将批量写对象写入数据库
+ */
 Status DB::Delete(const WriteOptions& opt, const Slice& key) {
   WriteBatch batch;
   batch.Delete(key);
   return Write(opt, &batch);
 }
 
+/**
+ * 析构函数
+ */
 DB::~DB() { }
 
+/**
+ * 打开数据库
+ *
+ * 首先根据数据库名创建一个数据库实现对象
+ * 然后对数据库实现对象中的互斥锁加锁
+ * 创建一个版本编辑对象和save_manifest标记
+ * 调用数据库实现对象的恢复方法，它会操作版本编辑对象和save_manifest标记
+ * 如果版本编辑对象添加了修改则save_manifest标记为真表示要修改manifest文件
+ * 判断数据库实现对象里面是否有内存表，如果没有则创建一个新的日志文件和一个新的内存表
+ * 如果需要修改manifest文件则修改edit的日志号，并且调用版本集合的LogAndApply
+ * 调用数据库实现对象的DeleteObsoleteFiles方法删除多余文件和MaybeScheduleCompaction方法尝试调度合并
+ * 解锁数据库实现对象中的互斥锁
+ * 最后将数据库实现对象传出到dbptr
+ */
 Status DB::Open(const Options& options, const std::string& dbname,
                 DB** dbptr) {
   *dbptr = NULL;
@@ -1653,9 +1717,22 @@ Status DB::Open(const Options& options, const std::string& dbname,
   return s;
 }
 
+/**
+ * 析构函数
+ */
 Snapshot::~Snapshot() {
 }
 
+/**
+ * 删除数据库中的数据
+ *
+ * 首先拿到数据库中所有的文件名
+ * 然后创建一个锁文件
+ * 对文件名列表中的文件名进行解析获得其文件类型和文件号
+ * 只要类型不是锁类型就删除文件
+ * 解除并且删除锁文件
+ * 删除这个数据库的目录
+ */
 Status DestroyDB(const std::string& dbname, const Options& options) {
   Env* env = options.env;
   std::vector<std::string> filenames;
