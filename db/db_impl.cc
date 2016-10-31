@@ -497,7 +497,13 @@ Status DBImpl::Recover(VersionEdit* edit, bool *save_manifest) {
 /**
  * 恢复日志文件
  *
- * 首先定义一个日志报告者
+ * 首先定义一个日志报告者，当数据出错时报告错误
+ * 然后打开日志文件
+ * 然后创建一个日志报告者对象
+ * 然后创建一个日志读者对象
+ * 循环读取日志中的记录，将其插入内存表中，并且根据记录更新最大序列号，如果内存表过大，就调用WriteLevel0Table将内存表写到磁盘中
+ * 如果可以重用日志，并且是最后一个日志，并且还没有进行过合并时，将当前日志文件置为这个文件，当前内存表置为刚刚恢复过数据的内存表
+ * 如果日志不能重用则将内存表写到磁盘中
  */
 Status DBImpl::RecoverLogFile(uint64_t log_number, bool last_log,
                               bool* save_manifest, VersionEdit* edit,
@@ -679,6 +685,14 @@ Status DBImpl::WriteLevel0Table(MemTable* mem, VersionEdit* edit,
   return s;
 }
 
+/**
+ * 合并不可变内存表
+ *
+ * 首先创建一个版本编辑对象，并且得到当前版本集合的当前版本
+ * 然后调用WriteLevel0Table将不可变内存表写入磁盘
+ * 将版本编辑的日志号置为当前日志号，并且调用LogAndApply把版本编辑写入当前版本集合
+ * 然后将不可变内存表去引用并且置空，将有不可变内存表的标记置为假，最后调用DeleteObsoleteFiles删除多余文件
+ */
 void DBImpl::CompactMemTable() {
   mutex_.AssertHeld();
   assert(imm_ != NULL);
@@ -712,6 +726,12 @@ void DBImpl::CompactMemTable() {
   }
 }
 
+/**
+ * 合并与begin到end重合的各层
+ *
+ * 首先遍历各层，看看各层是否有重合，找到有重合的最大层
+ * 然后合并内存表，和小于最大层的各层
+ */
 void DBImpl::CompactRange(const Slice* begin, const Slice* end) {
   int max_level_with_files = 1;
   {
@@ -729,6 +749,11 @@ void DBImpl::CompactRange(const Slice* begin, const Slice* end) {
   }
 }
 
+/**
+ * 合并指定层级指定范围的内存表
+ * 根据范围和层级创建一个人工合并对象，然后将其设置为manual_compaction_之后调用MaybeScheduleCompaction开始调度合并
+ * 并且等待合并完毕
+ */
 void DBImpl::TEST_CompactRange(int level, const Slice* begin,const Slice* end) {
   assert(level >= 0);
   assert(level + 1 < config::kNumLevels);
@@ -766,6 +791,12 @@ void DBImpl::TEST_CompactRange(int level, const Slice* begin,const Slice* end) {
   }
 }
 
+/**
+ * 等待正在合并的不可变内存表合并完毕
+ *
+ * 首先写一个NULL的批量写到内存表，等待前面的写结束
+ * 然后等待正在合并的不可变内存表合并完毕
+ */
 Status DBImpl::TEST_CompactMemTable() {
   // NULL batch means just wait for earlier writes to be done
   Status s = Write(WriteOptions(), NULL);
@@ -782,6 +813,11 @@ Status DBImpl::TEST_CompactMemTable() {
   return s;
 }
 
+/**
+ * 记录后台错误
+ *
+ * 将状态s设置到bg_error_中，并且唤醒等待在bg_cv_上的线程
+ */
 void DBImpl::RecordBackgroundError(const Status& s) {
   mutex_.AssertHeld();
   if (bg_error_.ok()) {
@@ -790,6 +826,13 @@ void DBImpl::RecordBackgroundError(const Status& s) {
   }
 }
 
+/**
+ * 调度合并
+ *
+ * 首先判断后台合并是不是正在进行或者正在关闭过程中或者已经出现了后台错误，这样的话直接返回
+ * 如果不可变内存表为空并且人工合并也是空并且版本集合也不需要合并，这样的话直接返回
+ * 否则设置后台合并正在进行，并且使其调度BGWork
+ */
 void DBImpl::MaybeScheduleCompaction() {
   mutex_.AssertHeld();
   if (bg_compaction_scheduled_) {
@@ -808,10 +851,24 @@ void DBImpl::MaybeScheduleCompaction() {
   }
 }
 
+/**
+ * 后台工作
+ *
+ * 调用db的BackgroundCall方法
+ */
 void DBImpl::BGWork(void* db) {
   reinterpret_cast<DBImpl*>(db)->BackgroundCall();
 }
 
+/**
+ * 后台调用
+ *
+ * 首先加锁
+ * 然后判断是否正在关闭或者遇到错误，如果都没有则调用BackgroundCompaction进行后台合并
+ * 然后将后台合并正在进行设置为假
+ * 然后调用MaybeScheduleCompaction看看是否需要继续合并
+ * 然后唤醒在bg_cv_上等待的线程
+ */
 void DBImpl::BackgroundCall() {
   MutexLock l(&mutex_);
   assert(bg_compaction_scheduled_);
@@ -831,6 +888,18 @@ void DBImpl::BackgroundCall() {
   bg_cv_.SignalAll();
 }
 
+/**
+ * 后台合并
+ *
+ * 首先判断不可变内存表是否为空，如果不为空则调用CompactMemTable合并之
+ * 首先判断是否存在人工合并，如果存在则调用CompactRange从人工合并构建一个合并
+ * 如果不存在则调用PickCompaction选择一个合并
+ * 如果合并不是空，判定一下是否不是人工合并，并且是普通移动，如果是则修改合并中的版本编辑，并且记录到manifest文件中
+ * 否则调用DoCompactionWork进行合并，并且调用CleanupCompaction清除合并，最后释放输入版本删除多余文件
+ * 如果是人工合并，状态不是正常则将其设置为完毕
+ * 否则将其开始设置为这次人工合并的结束
+ * 最后将人工合并置为空
+ */
 void DBImpl::BackgroundCompaction() {
   mutex_.AssertHeld();
 
@@ -916,6 +985,14 @@ void DBImpl::BackgroundCompaction() {
   }
 }
 
+/**
+ * 清理合并
+ *
+ * 首先判断合并中是否存在构造者，如果有则取消并且析构
+ * 析构合并中的输出文件
+ * 将合并中的输出文件列表中的文件从pending_outputs_中移除
+ * 最后析构合并
+ */
 void DBImpl::CleanupCompaction(CompactionState* compact) {
   mutex_.AssertHeld();
   if (compact->builder != NULL) {
@@ -933,6 +1010,13 @@ void DBImpl::CleanupCompaction(CompactionState* compact) {
   delete compact;
 }
 
+/**
+ * 打开合并输出文件
+ *
+ * 创建一个新的文件，将其添加到pending_outputs_中
+ * 用这个文件创建一个合并状态的输出，添加到合并状态中
+ * 最后用这个文件创建合并状态的输出文件和构建者
+ */
 Status DBImpl::OpenCompactionOutputFile(CompactionState* compact) {
   assert(compact != NULL);
   assert(compact->builder == NULL);
