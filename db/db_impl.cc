@@ -1042,6 +1042,19 @@ Status DBImpl::OpenCompactionOutputFile(CompactionState* compact) {
   return s;
 }
 
+/**
+ * 完成合并输出文件
+ *
+ * 首先获得合并当前输出的文件号
+ * 然后获得合并构建者的元素数目
+ * 然后调用合并构建者的Finish方法
+ * 然后获得合并构建者的文件大小
+ * 将其设置到合并当前输出的文件大小中
+ * 将合并的总大小也加上这个大小
+ * 然后析构合并的构建者并且将其置空
+ * 然后同步并且关闭合并输出文件，并且析构置空之
+ * 如果构建者元素数目大于0则在输出文件上创建一个迭代器，并且测试其是否有效
+ */
 Status DBImpl::FinishCompactionOutputFile(CompactionState* compact,
                                           Iterator* input) {
   assert(compact != NULL);
@@ -1094,7 +1107,13 @@ Status DBImpl::FinishCompactionOutputFile(CompactionState* compact,
   return s;
 }
 
-
+/**
+ * 安装合并结果
+ *
+ * 首先将合并的文件从其版本编辑中删除
+ * 然后将输出文件添加到版本集合中
+ * 最后将版本编辑应用到当前版本中
+ */
 Status DBImpl::InstallCompactionResults(CompactionState* compact) {
   mutex_.AssertHeld();
   Log(options_.info_log,  "Compacted %d@%d + %d@%d files => %lld bytes",
