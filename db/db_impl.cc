@@ -1135,6 +1135,27 @@ Status DBImpl::InstallCompactionResults(CompactionState* compact) {
   return versions_->LogAndApply(compact->compaction->edit(), &mutex_);
 }
 
+/**
+ * 做合并工作
+ *
+ * 首先将合并的最小快照设置为当前快照集合最旧的序列号，如果快照集合为空就设置为版本集合的最近序列号
+ * 释放互斥锁
+ * 创建合并的输入迭代器，并且将其指向第一个元素
+ * 迭代输入迭代器：
+ * 如果发现有内存表需要压缩就加锁并且调用CompactMemTable压缩，压缩完唤醒等待在bg_cv_上的线程并且解锁
+ * 判断合并是否应该提前终止，如果是调用FinishCompactionOutputFile完成合并输出
+ * 解析内部键，根据合并的最小序列号决定是否需要保留这个内部键
+ * 如果保留这个内部键，先看看合并是否有构建者，如果没有调用OpenCompactionOutputFile创建
+ * 然后看看合并构建者元素数量是否为0，如果是则将合并当前输出的最小键设置为它
+ * 将合并当前输出的最大键设置为它，将键值对加入构建者中
+ * 如果构建者文件大小超过最大输出文件大小，则调用将构建者FinishCompactionOutputFile输出文件
+ * 继续迭代直到结束
+ * 如果构建者还存在继续调用FinishCompactionOutputFile
+ * 析构输入迭代器
+ * 将互斥锁加上
+ * 将合并的统计信息设置好
+ * 调用InstallCompactionResults安装合并结果
+ */
 Status DBImpl::DoCompactionWork(CompactionState* compact) {
   const uint64_t start_micros = env_->NowMicros();
   int64_t imm_micros = 0;  // Micros spent doing imm_ compactions
