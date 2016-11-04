@@ -1318,13 +1318,34 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
 }
 
 namespace {
+/**
+ * 迭代器状态类
+ */
 struct IterState {
+  /**
+   * 指向互斥锁的指针
+   */
   port::Mutex* mu;
+  /**
+   * 指向版本的指针
+   */
   Version* version;
+  /**
+   * 指向内存表的指针
+   */
   MemTable* mem;
+  /**
+   * 指向不可变内存表的指针
+   */
   MemTable* imm;
 };
 
+/**
+ * 清空迭代器状态
+ *
+ * 第一个参数就是指向迭代器状态的指针
+ * 将其转型成迭代器状态，然后锁上它的互斥锁，对内存表、不可变内存表和版本分别去引用，最后解锁，析构迭代器状态
+ */
 static void CleanupIteratorState(void* arg1, void* arg2) {
   IterState* state = reinterpret_cast<IterState*>(arg1);
   state->mu->Lock();
@@ -1336,6 +1357,19 @@ static void CleanupIteratorState(void* arg1, void* arg2) {
 }
 }  // namespace
 
+/**
+ * 创建新的内部迭代器
+ *
+ * 加互斥锁
+ * 将latest_snapshot设置为版本集合的最近序列号
+ * 创建一个迭代器数组里面分别存放，内存表迭代器，不可变内存表迭代器和当前版本的各层的迭代器
+ * 同时对内存表，不可变内存表和当前版本加一次引用
+ * 利用迭代器数组创建一个合并迭代器
+ * 创建一个迭代器状态，里面存上指向互斥锁、内存表、不可变内存表和当前版本的指针，将CleanupIteratorState和它注册到迭代器清除函数中
+ * 将seed设置成seed_自增1
+ * 对互斥锁解锁
+ * 返回合并迭代器
+ */
 Iterator* DBImpl::NewInternalIterator(const ReadOptions& options,
                                       SequenceNumber* latest_snapshot,
                                       uint32_t* seed) {
@@ -1367,17 +1401,40 @@ Iterator* DBImpl::NewInternalIterator(const ReadOptions& options,
   return internal_iter;
 }
 
+/**
+ * 测试新建内部迭代器
+ *
+ * 直接调用NewInternalIterator
+ */
 Iterator* DBImpl::TEST_NewInternalIterator() {
   SequenceNumber ignored;
   uint32_t ignored_seed;
   return NewInternalIterator(ReadOptions(), &ignored, &ignored_seed);
 }
 
+/**
+ * 测试最大下一层交叠字符数
+ *
+ * 直接调用MaxNextLevelOverlappingBytes
+ */
 int64_t DBImpl::TEST_MaxNextLevelOverlappingBytes() {
   MutexLock l(&mutex_);
   return versions_->MaxNextLevelOverlappingBytes();
 }
 
+/**
+ * get操作
+ *
+ * 首先对互斥锁加锁
+ * 然后判断读选线中是否指定某一快照，如果指定则使用这个快照的序列号
+ * 否则使用当前版本集合最新的序列号
+ * 对内存表，不可变内存表和当前版本加一次引用
+ * 然后解开互斥锁，构建一个查找键，查找内存表，不可变内存表和当前版本，其中有一个找到就可以忽略后面的查找
+ * 对互斥器加锁
+ * 如果刚刚去版本里面查找了则调用UpdateStats更新统计信息并且调用MaybeScheduleCompaction调度合并
+ * 将内存表，不可变内存表和当前版本减一次引用
+ * 最后对互斥锁放锁
+ */
 Status DBImpl::Get(const ReadOptions& options,
                    const Slice& key,
                    std::string* value) {
@@ -1425,6 +1482,12 @@ Status DBImpl::Get(const ReadOptions& options,
   return s;
 }
 
+/**
+ * 创建新的迭代器
+ *
+ * 首先调用NewInternalIterator创建内部迭代器
+ * 然后调用NewDBIterator用内部迭代器创建一个数据库迭代器
+ */
 Iterator* DBImpl::NewIterator(const ReadOptions& options) {
   SequenceNumber latest_snapshot;
   uint32_t seed;
@@ -1437,6 +1500,13 @@ Iterator* DBImpl::NewIterator(const ReadOptions& options) {
       seed);
 }
 
+/**
+ * 记录读样本
+ *
+ * 首先对互斥锁加锁
+ * 然后对当前版本调用RecordReadSample，如果成功调用MaybeScheduleCompaction调度合并
+ * 最后释放互斥锁
+ */
 void DBImpl::RecordReadSample(Slice key) {
   MutexLock l(&mutex_);
   if (versions_->current()->RecordReadSample(key)) {
@@ -1444,25 +1514,68 @@ void DBImpl::RecordReadSample(Slice key) {
   }
 }
 
+/**
+ * 获得当前快照
+ *
+ * 首先对互斥锁加锁
+ * 然后用快照集合和版本集合的最新序列号创建一个新的快照
+ * 最后释放互斥锁，返回新创建的快照
+ */
 const Snapshot* DBImpl::GetSnapshot() {
   MutexLock l(&mutex_);
   return snapshots_.New(versions_->LastSequence());
 }
 
+/**
+ * 释放快照
+ *
+ * 在互斥锁的保护下将快照从快照集合中删掉
+ */
 void DBImpl::ReleaseSnapshot(const Snapshot* s) {
   MutexLock l(&mutex_);
   snapshots_.Delete(reinterpret_cast<const SnapshotImpl*>(s));
 }
 
 // Convenience methods
+/**
+ * put操作
+ *
+ * 调用了DB::Put
+ */
 Status DBImpl::Put(const WriteOptions& o, const Slice& key, const Slice& val) {
   return DB::Put(o, key, val);
 }
 
+/**
+ * delete操作
+ *
+ * 调用了DB::Delete
+ */
 Status DBImpl::Delete(const WriteOptions& options, const Slice& key) {
   return DB::Delete(options, key);
 }
 
+/**
+ * 将批量写对象写到数据库中
+ *
+ * 创建一个写者对象，给其传入批量写的指针，是否sync磁盘，是否完成
+ * 对互斥器加锁
+ * 将写者加入写者队列的尾端
+ * 循环判断写者是否在写者队列的头部或者已经完成，如果没有则等待在写者的条件变量上面
+ * 如果写者完成则直接返回写着的状态
+ * 否则首先调用MakeRoomForWrite
+ * 然后判断批量写是否为空，如果不为空进行以下操作：
+ * 调用BuildBatchGroup将写者队列前面的几个写者的批量写进行合并将last_writer设置为最后合并的写者
+ * 然后对其设置序列号并且更新最新序列号
+ * 解开互斥锁，写批量写的日志，然后根据选项决定是否sync磁盘
+ * 然后将批量写写到内存表中
+ * 加上互斥锁
+ * 如果我们用了tmp_batch_则清空它
+ * 最后更新版本集合的序列号
+ *
+ * 循环从对头取出写者直到碰到last_writer，如果它不是最开始的队头写者则将其设置为完成并且唤醒等待在其条件变量上的线程
+ * 如果队列不为空则唤醒等待在队头条件变量上的线程
+ */
 Status DBImpl::Write(const WriteOptions& options, WriteBatch* my_batch) {
   Writer w(&mutex_);
   w.batch = my_batch;
@@ -1538,6 +1651,15 @@ Status DBImpl::Write(const WriteOptions& options, WriteBatch* my_batch) {
 
 // REQUIRES: Writer list must be non-empty
 // REQUIRES: First writer must have a non-NULL batch
+/**
+ * 将队列前面的几个写者中的批量写合并为一个并且返回
+ *
+ * 首先获取队头写者批量写的大小
+ * 根据其大小设置合并出的批量写的最大大小
+ * 迭代写者队列对批量写进行合并并且保存在tmp_batch_中，如果在非sync的批量写中出现sync的批量写则提前结束合并
+ * 否则在超过最大大小或者写者队列遍历完时结束合并，并且将合并的最后一个写者设置为last_writer
+ * 最后返回合并后的批量写
+ */
 WriteBatch* DBImpl::BuildBatchGroup(Writer** last_writer) {
   assert(!writers_.empty());
   Writer* first = writers_.front();
