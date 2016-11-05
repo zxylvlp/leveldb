@@ -1709,6 +1709,19 @@ WriteBatch* DBImpl::BuildBatchGroup(Writer** last_writer) {
 
 // REQUIRES: mutex_ is held
 // REQUIRES: this thread is currently at the front of the writer queue
+/**
+ * 为写内存表留出空间
+ *
+ * 如果不强制更换内存表则将允许延迟设置为真
+ * 进入等待条件变量的循环，在循环中做以下操作：
+ * 首先判断是否允许延迟并且第0层中的文件数目超过了延迟写的边界，如果是则释放互斥锁睡1s然后将允许延迟设置为假加锁继续循环
+ * 然后判断是否不强制更换内存表并且内存表的大小并没有超过限制，如果是则直接跳出循环
+ * 然后判断不可变内存表是否存在，如果是则说明内存表要更换但是不可变内存表还没写到磁盘则等待在条件变量上继续循环
+ * 然后判断第0层的文件数是否超过了硬限制，如果是则等待在条件变量上继续循环
+ * 否则析构之前的日志文件，创建一个新的日志文件，将内存表置为不可变内存表，
+ * 并且将创建一个新的内存表，对新的内存表增加一次引用，将强制更换内存表设置为假，
+ * 并且调用MaybeScheduleCompaction尝试调度合并，最后继续循环
+ */
 Status DBImpl::MakeRoomForWrite(bool force) {
   mutex_.AssertHeld();
   assert(!writers_.empty());
@@ -1772,6 +1785,9 @@ Status DBImpl::MakeRoomForWrite(bool force) {
   return s;
 }
 
+/**
+ * 根据需要的状态返回数据库中的状态信息
+ */
 bool DBImpl::GetProperty(const Slice& property, std::string* value) {
   value->clear();
 
