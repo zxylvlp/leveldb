@@ -29,7 +29,10 @@ FilterBlockBuilder::FilterBlockBuilder(const FilterPolicy* policy)
 }
 
 /**
+ * 开始块
  *
+ * 首先获得块偏移量将其除以kFilterBase，可以得到filter号
+ * 然后查看filter偏移量数组，看看能否差一点找到指定号码，如果不能差一点找到指定号码则调用GenerateFilter生成一个，循环此过程直到差一点能找到
  */
 void FilterBlockBuilder::StartBlock(uint64_t block_offset) {
   uint64_t filter_index = (block_offset / kFilterBase);
@@ -39,12 +42,28 @@ void FilterBlockBuilder::StartBlock(uint64_t block_offset) {
   }
 }
 
+/**
+ * 添加键
+ *
+ * 将keys_的大小追加到start_数组中
+ * 并且将key的内容追加到keys_平坦化数组中
+ */
 void FilterBlockBuilder::AddKey(const Slice& key) {
   Slice k = key;
   start_.push_back(keys_.size());
   keys_.append(k.data(), k.size());
 }
 
+/**
+ * 完成构建
+ *
+ * 如果start_数组不为空就调用GenerateFilter生成filter到result_中
+ * 然后将result_的大小作为偏移量数组的偏移量
+ * 然后向result_中追加filter_offsets_数组的内容
+ * 然后将偏移量数组的偏移量追加到result_中
+ * 然后将kFilterBaseLg追加到result_中
+ * 最后返回result_
+ */
 Slice FilterBlockBuilder::Finish() {
   if (!start_.empty()) {
     GenerateFilter();
@@ -61,6 +80,16 @@ Slice FilterBlockBuilder::Finish() {
   return Slice(result_);
 }
 
+/**
+ * 生成filter
+ *
+ * keys_中保存的是平坦化后的key数组
+ * start_中保存的是平台化后的key数组中每一个key的起始位置
+ * 这里首先将平坦化的key数据解析成非平坦化的key数组
+ * 然后将result_当前大小保存到filter偏移量数组中
+ * 然后调用CreateFilter将非平台化key数组制作成filter追加到result_中
+ * 最后清空平坦化和非平坦化key数组和其起始位置数组
+ */
 void FilterBlockBuilder::GenerateFilter() {
   const size_t num_keys = start_.size();
   if (num_keys == 0) {
@@ -87,6 +116,9 @@ void FilterBlockBuilder::GenerateFilter() {
   start_.clear();
 }
 
+/**
+ * 构造函数
+ */
 FilterBlockReader::FilterBlockReader(const FilterPolicy* policy,
                                      const Slice& contents)
     : policy_(policy),
@@ -104,6 +136,14 @@ FilterBlockReader::FilterBlockReader(const FilterPolicy* policy,
   num_ = (n - 5 - last_word) / 4;
 }
 
+/**
+ * 根据块起始位置和key查找key是否可能存在
+ *
+ * 首先将块起始位置右移base_lg_位，得到filter号
+ * 然后根据filter号从filter的偏移量数组中找到其偏移量和长度
+ * 然后根据偏移量和长度确定filter
+ * 然后调用并且返回KeyMayMatch判断key是否在filter中
+ */
 bool FilterBlockReader::KeyMayMatch(uint64_t block_offset, const Slice& key) {
   uint64_t index = block_offset >> base_lg_;
   if (index < num_) {

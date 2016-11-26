@@ -12,6 +12,11 @@
 
 namespace leveldb {
 
+/**
+ * 编码块句柄
+ *
+ * 将其偏移量和大小分别编码追加到dst中
+ */
 void BlockHandle::EncodeTo(std::string* dst) const {
   // Sanity check that all fields have been set
   assert(offset_ != ~static_cast<uint64_t>(0));
@@ -20,6 +25,11 @@ void BlockHandle::EncodeTo(std::string* dst) const {
   PutVarint64(dst, size_);
 }
 
+/**
+ * 解码块句柄
+ *
+ * 将其偏移量和大小分别从input中解码
+ */
 Status BlockHandle::DecodeFrom(Slice* input) {
   if (GetVarint64(input, &offset_) &&
       GetVarint64(input, &size_)) {
@@ -29,6 +39,13 @@ Status BlockHandle::DecodeFrom(Slice* input) {
   }
 }
 
+/**
+ * 编码Footer
+ *
+ * 首先将其meta索引块句柄和索引块句柄编码追加到dst中
+ * 然后将dst后面添上0补成40字节
+ * 最后将表的魔数追加到dst中
+ */
 void Footer::EncodeTo(std::string* dst) const {
   const size_t original_size = dst->size();
   metaindex_handle_.EncodeTo(dst);
@@ -40,6 +57,13 @@ void Footer::EncodeTo(std::string* dst) const {
   (void)original_size;  // Disable unused variable warning.
 }
 
+/**
+ * 解码Footer
+ *
+ * 首先将魔数取出判断是否正确
+ * 然后分别解码meta索引块句柄和索引块句柄
+ * 最后将input指向的内容后移
+ */
 Status Footer::DecodeFrom(Slice* input) {
   const char* magic_ptr = input->data() + kEncodedLength - 8;
   const uint32_t magic_lo = DecodeFixed32(magic_ptr);
@@ -62,6 +86,15 @@ Status Footer::DecodeFrom(Slice* input) {
   return result;
 }
 
+/**
+ * 读file中handle指向的块到result中
+ *
+ * 首先初始化result
+ * 然后初始化一块handle指向的块的大小加上块尾部大小的缓冲区
+ * 然后从文件中handle指向的块的偏移量开始读取刚刚大小的内容到缓冲区中
+ * 然后对尾部中crc进行校验
+ * 最后根据类型决定是否要解压缩，并让result指向内容
+ */
 Status ReadBlock(RandomAccessFile* file,
                  const ReadOptions& options,
                  const BlockHandle& handle,
