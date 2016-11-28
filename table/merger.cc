@@ -11,8 +11,16 @@
 namespace leveldb {
 
 namespace {
+/**
+ * 合并迭代器类
+ */
 class MergingIterator : public Iterator {
  public:
+  /**
+   * 构造函数
+   *
+   * 初始化成员并且将children_用children迭代器指针数组填满
+   */
   MergingIterator(const Comparator* comparator, Iterator** children, int n)
       : comparator_(comparator),
         children_(new IteratorWrapper[n]),
@@ -24,6 +32,11 @@ class MergingIterator : public Iterator {
     }
   }
 
+  /**
+   * 析构函数
+   *
+   * 析构children_数组
+   */
   virtual ~MergingIterator() {
     delete[] children_;
   }

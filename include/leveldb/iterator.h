@@ -20,6 +20,9 @@
 
 namespace leveldb {
 
+/**
+ * 迭代器类
+ */
 class Iterator {
  public:
   Iterator();
@@ -76,12 +79,30 @@ class Iterator {
   void RegisterCleanup(CleanupFunction function, void* arg1, void* arg2);
 
  private:
+  /**
+   * 迭代器清除类型
+   */
   struct Cleanup {
+    /**
+     * 迭代器清除函数
+     */
     CleanupFunction function;
+    /**
+     * 参数1
+     */
     void* arg1;
+    /**
+     * 参数2
+     */
     void* arg2;
+    /**
+     * 指向下一个清除对象的指针
+     */
     Cleanup* next;
   };
+  /**
+   * 迭代器清除对象
+   */
   Cleanup cleanup_;
 
   // No copying allowed
