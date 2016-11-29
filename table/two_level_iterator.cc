@@ -13,8 +13,14 @@ namespace leveldb {
 
 namespace {
 
+/**
+ * 块函数类型定义
+ */
 typedef Iterator* (*BlockFunction)(void*, const ReadOptions&, const Slice&);
 
+/**
+ * 两层迭代器类
+ */
 class TwoLevelIterator: public Iterator {
  public:
   TwoLevelIterator(
@@ -31,17 +37,40 @@ class TwoLevelIterator: public Iterator {
   virtual void Next();
   virtual void Prev();
 
+  /**
+   * 迭代器是否有效
+   *
+   * 返回数据迭代器是否有效
+   */
   virtual bool Valid() const {
     return data_iter_.Valid();
   }
+
+  /**
+   * 获取当前键
+   *
+   * 返回数据迭代器指向的元素的键
+   */
   virtual Slice key() const {
     assert(Valid());
     return data_iter_.key();
   }
+  /**
+   * 获取当前值
+   *
+   * 返回数据迭代器指向的元素的值
+   */
   virtual Slice value() const {
     assert(Valid());
     return data_iter_.value();
   }
+  /**
+   * 获取当前状态
+   *
+   * 如果索引迭代器状态不正常则返回其不正常状态
+   * 如果数据迭代器状态不正常则返回其不正常状态
+   * 否则返回本对象状态
+   */
   virtual Status status() const {
     // It'd be nice if status() returned a const Status& instead of a Status
     if (!index_iter_.status().ok()) {
@@ -54,6 +83,11 @@ class TwoLevelIterator: public Iterator {
   }
 
  private:
+  /**
+   * 保存错误
+   *
+   * 如果当前状态正常，并且传入了不正常状态，则将当前状态置为这个不正常状态
+   */
   void SaveError(const Status& s) {
     if (status_.ok() && !s.ok()) status_ = s;
   }
@@ -62,17 +96,41 @@ class TwoLevelIterator: public Iterator {
   void SetDataIterator(Iterator* data_iter);
   void InitDataBlock();
 
+  /**
+   * 块函数
+   */
   BlockFunction block_function_;
+  /**
+   * 参数指针
+   */
   void* arg_;
+  /**
+   * 读选项
+   */
   const ReadOptions options_;
+  /**
+   * 当前状态
+   */
   Status status_;
+  /**
+   * 索引迭代器
+   */
   IteratorWrapper index_iter_;
+  /**
+   * 数据迭代器
+   */
   IteratorWrapper data_iter_; // May be NULL
   // If data_iter_ is non-NULL, then "data_block_handle_" holds the
   // "index_value" passed to block_function_ to create the data_iter_.
+  /**
+   * 数据块句柄，即创建数据迭代器时索引迭代器的值
+   */
   std::string data_block_handle_;
 };
 
+/**
+ * 构造函数
+ */
 TwoLevelIterator::TwoLevelIterator(
     Iterator* index_iter,
     BlockFunction block_function,
@@ -85,9 +143,20 @@ TwoLevelIterator::TwoLevelIterator(
       data_iter_(NULL) {
 }
 
+/**
+ * 析构函数
+ */
 TwoLevelIterator::~TwoLevelIterator() {
 }
 
+/**
+ * 将迭代器指向大于等于target的最小元素
+ *
+ * 首先将索引迭代器指向大于等于target的最小元素
+ * 然后调用InitDataBlock初始化数据块
+ * 如果数据迭代器不为空，则将其指向大于等于target的最小元素
+ * 最后调用SkipEmptyDataBlocksForward向前跳过空数据块
+ */
 void TwoLevelIterator::Seek(const Slice& target) {
   index_iter_.Seek(target);
   InitDataBlock();
@@ -148,11 +217,25 @@ void TwoLevelIterator::SkipEmptyDataBlocksBackward() {
   }
 }
 
+/**
+ * 设置数据迭代器
+ *
+ * 首先将当前数据迭代器的错误信息保存，然后将data_iter设置为当前数据迭代器
+ */
 void TwoLevelIterator::SetDataIterator(Iterator* data_iter) {
   if (data_iter_.iter() != NULL) SaveError(data_iter_.status());
   data_iter_.Set(data_iter);
 }
 
+/**
+ * 初始化数据块
+ *
+ * 首先判断索引迭代器是否有效，如果无效则将数据迭代器置为空并返回
+ * 否则先将索引迭代器指向的值取出来
+ * 然后判断是否data_iter_不为空且data_block_handle_和索引迭代器指向的值一样
+ * 如果一样则直接返回
+ * 否则调用块函数创建一个数据迭代器，并且将当前索引迭代器指向的值放到data_block_handle_中，并且调用SetDataIterator设置数据迭代器
+ */
 void TwoLevelIterator::InitDataBlock() {
   if (!index_iter_.Valid()) {
     SetDataIterator(NULL);
@@ -171,6 +254,9 @@ void TwoLevelIterator::InitDataBlock() {
 
 }  // namespace
 
+/**
+ * 创建两层迭代器
+ */
 Iterator* NewTwoLevelIterator(
     Iterator* index_iter,
     BlockFunction block_function,
