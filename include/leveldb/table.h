@@ -57,8 +57,14 @@ class Table {
 
  private:
   struct Rep;
+  /**
+   * 指向内容对象的指针
+   */
   Rep* rep_;
 
+  /**
+   * 构造函数
+   */
   explicit Table(Rep* rep) { rep_ = rep; }
   static Iterator* BlockReader(void*, const ReadOptions&, const Slice&);
 

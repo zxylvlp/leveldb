@@ -164,6 +164,14 @@ void TwoLevelIterator::Seek(const Slice& target) {
   SkipEmptyDataBlocksForward();
 }
 
+/**
+ * 将迭代器指向最前面的元素
+ *
+ * 首先将索引迭代器指向最前面的元素
+ * 然后调用InitDataBlock初始化数据块
+ * 然后判断数据迭代器是否不为空，如果是则将其指向第一个元素
+ * 最后调用SkipEmptyDataBlocksForward向前跳过空数据块
+ */
 void TwoLevelIterator::SeekToFirst() {
   index_iter_.SeekToFirst();
   InitDataBlock();
@@ -171,6 +179,14 @@ void TwoLevelIterator::SeekToFirst() {
   SkipEmptyDataBlocksForward();
 }
 
+/**
+ * 将迭代器指向最后面的元素
+ *
+ * 首先将索引迭代器指向最后面的元素
+ * 然后调用InitDataBlock初始化数据块
+ * 然后判断数据迭代器是否不为空，如果是则将其指向最后一个元素
+ * 最后调用SkipEmptyDataBlocksBackward向后跳过空数据块
+ */
 void TwoLevelIterator::SeekToLast() {
   index_iter_.SeekToLast();
   InitDataBlock();
@@ -178,19 +194,37 @@ void TwoLevelIterator::SeekToLast() {
   SkipEmptyDataBlocksBackward();
 }
 
+/**
+ * 将迭代器指向下一个元素
+ *
+ * 首先使数据迭代器指向下一个元素，然后调用SkipEmptyDataBlocksForward向前跳过空数据块
+ */
 void TwoLevelIterator::Next() {
   assert(Valid());
   data_iter_.Next();
   SkipEmptyDataBlocksForward();
 }
 
+/**
+ * 将迭代器指向上一个元素
+ *
+ * 首先使数据迭代器指向上一个元素，然后调用SkipEmptyDataBlocksBackward向后跳过空数据块
+ */
 void TwoLevelIterator::Prev() {
   assert(Valid());
   data_iter_.Prev();
   SkipEmptyDataBlocksBackward();
 }
 
-
+/**
+ * 向前跳过空数据块
+ *
+ * 循环判断数据迭代器是否为空或者无效，如果是则继续循环，否则跳出循环返回
+ * 在循环中进行如下操作：
+ * 首先判断索引迭代器是否有效，如果无效则将数据迭代器设置为空并返回
+ * 如果有效则将索引迭代器向前移动一个位置，并且调用InitDataBlock初始化数据块
+ * 继续判断数据迭代器是否不为空，如果是则将其指向最开始的元素
+ */
 void TwoLevelIterator::SkipEmptyDataBlocksForward() {
   while (data_iter_.iter() == NULL || !data_iter_.Valid()) {
     // Move to next block
@@ -204,6 +238,15 @@ void TwoLevelIterator::SkipEmptyDataBlocksForward() {
   }
 }
 
+/**
+ * 向后跳过空数据块
+ *
+ * 循环判断数据迭代器是否为空或者无效，如果是则继续循环，否则跳出循环返回
+ * 在循环中进行如下操作：
+ * 首先判断索引迭代器是否有效，如果无效则将数据迭代器设置为空并返回
+ * 如果有效则将索引迭代器向后移动一个位置，并且调用InitDataBlock初始化数据块
+ * 继续判断数据迭代器是否不为空，如果是则将其指向最结尾的元素
+ */
 void TwoLevelIterator::SkipEmptyDataBlocksBackward() {
   while (data_iter_.iter() == NULL || !data_iter_.Valid()) {
     // Move to next block

@@ -75,11 +75,17 @@ class TableBuilder {
   uint64_t FileSize() const;
 
  private:
+  /**
+   * 当前是否是正常状态
+   */
   bool ok() const { return status().ok(); }
   void WriteBlock(BlockBuilder* block, BlockHandle* handle);
   void WriteRawBlock(const Slice& data, CompressionType, BlockHandle* handle);
 
   struct Rep;
+  /**
+   * 指向表构建者对象的指针
+   */
   Rep* rep_;
 
   // No copying allowed

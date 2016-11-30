@@ -17,17 +17,53 @@
 
 namespace leveldb {
 
+/**
+ * 表构建者内容类
+ */
 struct TableBuilder::Rep {
+  /**
+   * 选项
+   */
   Options options;
+  /**
+   * 索引块选项
+   */
   Options index_block_options;
+  /**
+   * 指向文件的指针
+   */
   WritableFile* file;
+  /**
+   * 偏移量
+   */
   uint64_t offset;
+  /**
+   * 状态
+   */
   Status status;
+  /**
+   * 数据块构建者
+   */
   BlockBuilder data_block;
+  /**
+   * 索引块构建者
+   */
   BlockBuilder index_block;
+  /**
+   * 最近一个键
+   */
   std::string last_key;
+  /**
+   * 元素数
+   */
   int64_t num_entries;
+  /**
+   * 是否完成构建
+   */
   bool closed;          // Either Finish() or Abandon() has been called.
+  /**
+   * filter块构建者
+   */
   FilterBlockBuilder* filter_block;
 
   // We do not emit the index entry for a block until we have seen the
@@ -39,11 +75,25 @@ struct TableBuilder::Rep {
   // blocks.
   //
   // Invariant: r->pending_index_entry is true only if data_block is empty.
+  /**
+   * 索引项准备好
+   */
   bool pending_index_entry;
+  /**
+   * 准备添加到索引块的句柄
+   */
   BlockHandle pending_handle;  // Handle to add to index block
 
+  /**
+   * 压缩过的输出
+   */
   std::string compressed_output;
 
+  /**
+   * 构造函数
+   *
+   * 将索引块选项的块重启间隔设置为1
+   */
   Rep(const Options& opt, WritableFile* f)
       : options(opt),
         index_block_options(opt),
@@ -60,6 +110,11 @@ struct TableBuilder::Rep {
   }
 };
 
+/**
+ * 构造函数
+ *
+ * 如果表构建者内容对象的filter块构建者不为空则调用其StartBlock方法在起点处开始新块
+ */
 TableBuilder::TableBuilder(const Options& options, WritableFile* file)
     : rep_(new Rep(options, file)) {
   if (rep_->filter_block != NULL) {
@@ -67,12 +122,23 @@ TableBuilder::TableBuilder(const Options& options, WritableFile* file)
   }
 }
 
+/**
+ * 析构函数
+ *
+ * 将filter块构建者和表构建者内容对象析构
+ */
 TableBuilder::~TableBuilder() {
   assert(rep_->closed);  // Catch errors where caller forgot to call Finish()
   delete rep_->filter_block;
   delete rep_;
 }
 
+/**
+ * 改变选项
+ *
+ * 如果改变了比较者对象则返回出错
+ * 否则将选项赋予表构建者内容对象的选项和索引块选项，并将索引块选项的块重启间隔设置为1
+ */
 Status TableBuilder::ChangeOptions(const Options& options) {
   // Note: if more fields are added to Options, update
   // this function to catch changes that should not be allowed to
@@ -89,6 +155,14 @@ Status TableBuilder::ChangeOptions(const Options& options) {
   return Status::OK();
 }
 
+/**
+ * 添加kv对
+ *
+ * 首先判断是否应该添加索引项，如果是则找到上一个键和这个键的最短分隔符，并将这个最短分隔符和准备添加到索引块的句柄添加到索引块中并将应该添加到索引项设置为假
+ * 然后判断是否讯在filter块构建者，如果存在则将键添加进去
+ * 然后将当前键拷贝到上一个键，将元素数加1，并将键值对添加到数据块构建者中
+ * 然后获取数据块构建者的当前大小估计，如果超过了块应有大小则调用Flush方法将当前块构建者内容写入磁盘
+ */
 void TableBuilder::Add(const Slice& key, const Slice& value) {
   Rep* r = rep_;
   assert(!r->closed);
@@ -120,6 +194,14 @@ void TableBuilder::Add(const Slice& key, const Slice& value) {
   }
 }
 
+/**
+ * 将当前数据块构建者中的内容写入磁盘
+ *
+ * 首先判断当前状态是否不正常或者数据块构建者为空，如果是则直接返回
+ * 否则调用WriteBlock将数据库构建者的内容写入磁盘并传回准备添加到索引块的句柄
+ * 然后将索引项准备好设置为真，并对表文件做flush操作
+ * 最后判断filter块构建者是否存在，如果存在则调用其StartBlock在新的偏移量处开始块
+ */
 void TableBuilder::Flush() {
   Rep* r = rep_;
   assert(!r->closed);
@@ -136,6 +218,15 @@ void TableBuilder::Flush() {
   }
 }
 
+/**
+ * 写块
+ *
+ * 首先调用块构建者的finish方法完成构建得到其字节表示
+ * 然后根据选项得到压缩类型，如果是压缩并且压缩比较高时则将块内容设置为压缩后的字节表示类型设为压缩，否则将块内容设置为原始字节表示类型设为不压缩
+ * 调用WriteRawBlock将快内容表示写入磁盘，并传回其句柄
+ * 清空压缩输出
+ * 重置块构建者
+ */
 void TableBuilder::WriteBlock(BlockBuilder* block, BlockHandle* handle) {
   // File format contains a sequence of blocks where each block has:
   //    block_data: uint8[n]
@@ -172,6 +263,14 @@ void TableBuilder::WriteBlock(BlockBuilder* block, BlockHandle* handle) {
   block->Reset();
 }
 
+/**
+ * 写raw块
+ *
+ * 将handle的偏移量设置为表构建者的偏移量，将handle的大小设置为block_contents的大小
+ * 然后在表文件末尾追加block_contents
+ * 并且创建一个字符数组里面存放类型和crc并将其追加到表文件末尾
+ * 最后将表构建者的偏移量加上追加到文件的长度
+ */
 void TableBuilder::WriteRawBlock(const Slice& block_contents,
                                  CompressionType type,
                                  BlockHandle* handle) {
@@ -192,10 +291,28 @@ void TableBuilder::WriteRawBlock(const Slice& block_contents,
   }
 }
 
+/**
+ * 获得状态
+ *
+ * 返回表构建者内容对象的状态
+ */
 Status TableBuilder::status() const {
   return rep_->status;
 }
 
+/**
+ * 完成构建
+ *
+ * 首先调用Flush方法将当前数据块构建者的内容写入磁盘
+ * 然后将构建完标志设置为真
+ * 然后判断filter块构建者是否存在，如果存在则调用其Finish方法完成构建并调用WriteRawBlock函数无压缩写入磁盘
+ * 然后创建一个meta块构建者，判断filter块构建者是否存在，如果存在则将其key和句柄添加到meta块构建者中，并将其调用WriteBlock写入磁盘
+ * 如果表构建者的索引项准备好则找到最近的键的最短后继
+ * 将最短后继和准备好的索引项句柄添加到索引块中
+ * 并且将索引项准备好设置为假，最后调用WriteBlock将索引块写入磁盘
+ * 将meta索引块的句柄和索引块的句柄设置到footer中，然后将其编码并且追加到文件中
+ * 最后将表构建者的偏移量加上footer编码后的大小
+ */
 Status TableBuilder::Finish() {
   Rep* r = rep_;
   Flush();
@@ -253,16 +370,29 @@ Status TableBuilder::Finish() {
   return r->status;
 }
 
+/**
+ * 放弃构建
+ *
+ * 将构建完毕设置为真
+ */
 void TableBuilder::Abandon() {
   Rep* r = rep_;
   assert(!r->closed);
   r->closed = true;
 }
 
+/**
+ * 返回元素数
+ */
 uint64_t TableBuilder::NumEntries() const {
   return rep_->num_entries;
 }
 
+/**
+ * 获得文件大小
+ *
+ * 返回表构建者内容对象的偏移量
+ */
 uint64_t TableBuilder::FileSize() const {
   return rep_->offset;
 }
